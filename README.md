@@ -68,10 +68,29 @@ Notes:
 
 - `GET /health` — fast liveness check returning `status`, `service`, `app`, `environment`.
   Does not check Vault, so it stays fast and stable.
-- `GET /status/dependencies` — dependency reachability (currently Vault only). Returns 200 even
-  when Vault is down: `{"vault": {"reachable": false}}`.
+- `GET /status/dependencies` — dependency reachability (Vault + database). Returns 200 even when
+  a dependency is down: `{"vault": {"reachable": false}, "database": {"reachable": false}}`.
 
 Vault dev server: `http://localhost:8200` (root token `dev-root-token`, **local only**).
+
+## Database migrations
+
+Platform tables (`tenants`, `users`, `tenant_memberships`, `audit_logs`) are managed with
+Alembic. Apply the latest migrations:
+
+```bash
+cd backend
+uv run alembic upgrade head
+```
+
+Inside Docker (recommended — resolves the `postgres` hostname on the compose network):
+
+```bash
+docker compose exec backend uv run alembic upgrade head
+```
+
+The local command requires `DATABASE_URL` to point at a database reachable from the host
+(e.g. `postgresql+asyncpg://postgres:postgres@localhost:5433/albert`).
 
 ## Service Ports
 

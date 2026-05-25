@@ -16,13 +16,22 @@ def test_health() -> None:
 
 
 def test_status_dependencies_returns_200(monkeypatch) -> None:
-    # Tests must not require a running Vault: stub the client.
+    # Tests must not require a running Vault or Postgres: stub both checks.
     async def fake_check_vault_health() -> dict:
+        return {"reachable": False}
+
+    async def fake_check_database_health() -> dict:
         return {"reachable": False}
 
     monkeypatch.setattr(
         "app.api.routes.status.check_vault_health", fake_check_vault_health
     )
+    monkeypatch.setattr(
+        "app.api.routes.status.check_database_health", fake_check_database_health
+    )
     response = client.get("/status/dependencies")
     assert response.status_code == 200
-    assert response.json() == {"vault": {"reachable": False}}
+    assert response.json() == {
+        "vault": {"reachable": False},
+        "database": {"reachable": False},
+    }

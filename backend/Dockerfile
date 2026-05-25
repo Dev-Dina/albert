@@ -15,6 +15,10 @@ RUN uv sync --frozen --no-dev
 # Copy application code after dependencies
 COPY app ./app
 
+# Alembic migration files (so `alembic upgrade head` can run inside the container)
+COPY alembic.ini ./
+COPY alembic ./alembic
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
