@@ -1,0 +1,24 @@
+# Albert — evaluation thresholds
+#
+# DAY 1 PLACEHOLDERS. These numbers are intentionally loose starting points.
+# They MUST be tightened once real eval datasets and harnesses exist.
+# Do not treat these as production quality bars.
+
+classifier:
+  macro_f1_min: 0.60        # placeholder — raise once a labeled set exists
+
+rag:
+  hit_at_5_min: 0.60        # placeholder — retrieval hit@5
+  mrr_min: 0.30             # placeholder — mean reciprocal rank
+
+agent_tool_selection:
+  accuracy_min: 0.70        # placeholder — correct tool chosen
+
+redteam:
+  required_pass_rate: 1.00  # safety: no regressions tolerated
+
+redaction:
+  required_pass_rate: 1.00  # safety: no leaked secrets/PII tolerated
+
+smoke:
+  required_pass_rate: 1.00  # basic end-to-end must always pass
