@@ -30,3 +30,6 @@ Thumbs.db
 *.key
 credentials.json
 service-account*.json
+
+# Spec Kit local state
+.specify/feature.json
