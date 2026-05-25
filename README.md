@@ -35,6 +35,28 @@ make down    # stop
 `.env` is local only and is never copied into images. Vault runs in **dev mode for
 local use only** — do not use in production.
 
+## Foundation verification
+
+Verify the local foundation end to end:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Then check:
+
+- Backend health: <http://localhost:8000/health>
+- Modelserver health: <http://localhost:8020/health>
+- Guardrails health: <http://localhost:8010/health>
+- MinIO console: <http://localhost:9001> (login `minioadmin` / `minioadmin`)
+- Vault: <http://localhost:8200> (token `dev-root-token`)
+
+Notes:
+
+- Vault runs in **local dev mode only** — see [SECURITY.md](SECURITY.md).
+- `.env` is git-ignored; `.env.example` is tracked.
+
 ## Configuration
 
 - Copy the example env file before running: `cp .env.example .env`.
