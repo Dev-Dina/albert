@@ -1,0 +1,17 @@
+name: CI
+
+# Placeholder workflow. CI will be expanded in the next phase.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Notice
+        run: echo "CI will be expanded in the next phase."

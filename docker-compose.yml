@@ -1,0 +1,18 @@
+# Albert — docker-compose (PLACEHOLDER)
+#
+# Full service definitions come in the next phase.
+# This file is intentionally empty of real services for now.
+#
+# TODO (next phase): define services
+#   - backend       (FastAPI, port 8000)
+#   - admin         (CMS UI, port 8501)
+#   - modelserver   (port 8020)
+#   - guardrails    (port 8010)
+#   - postgres      (database)
+#   - redis         (cache / queue)
+#   - minio         (object storage)
+#   - vault         (secrets)
+#
+# TODO (next phase): networks, volumes, healthchecks, env wiring.
+
+services: {}
