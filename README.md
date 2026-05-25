@@ -14,25 +14,38 @@ Get a runnable foundation first. Features come later.
 
 This phase is only the repository foundation and folder skeleton. No app logic yet.
 
-## Local Setup
+## Local Setup (Docker Compose)
 
-_Placeholder — full setup steps come in the next phase._
+Run the full local stack:
 
 ```bash
 cp .env.example .env
-# make up   (coming soon)
+docker compose up --build
 ```
+
+Or use the Makefile:
+
+```bash
+make up      # build + start (detached)
+make logs    # tail logs
+make ps      # list services
+make down    # stop
+```
+
+`.env` is local only and is never copied into images. Vault runs in **dev mode for
+local use only** — do not use in production.
 
 ## Service Ports
 
-_Placeholder — services come in the next phase._
-
-| Service      | Port |
-|--------------|------|
-| backend      | 8000 |
-| admin        | 8501 |
-| guardrails   | 8010 |
-| modelserver  | 8020 |
+| Service     | Host → Container       | Notes |
+|-------------|------------------------|-------|
+| backend     | 8000 → 8000            | `GET /health` |
+| modelserver | 8020 → 8020            | `GET /health`, `POST /predict` |
+| guardrails  | 8010 → 8010            | `GET /health`, `POST /check-input`, `POST /check-output` |
+| postgres    | 5433 → 5432            | pgvector; db `albert`, user/pass `postgres` |
+| redis       | 6379 → 6379            | redis:7 |
+| minio       | 9000 → 9000, 9001 → 9001 | API / console; `minioadmin` / `minioadmin` |
+| vault       | 8200 → 8200            | dev mode; root token `dev-root-token` (local only) |
 
 ## Team Workflow
 

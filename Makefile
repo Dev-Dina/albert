@@ -1,25 +1,29 @@
 # Albert Makefile
-# Placeholder commands. Apps not created yet — these echo TODO for now.
+# Local Docker Compose stack + per-service test/lint.
 
-.PHONY: up down logs test lint format seed
+.PHONY: up down logs build ps test lint
 
 up:
-	@echo "TODO: start services (next phase)"
+	docker compose up --build -d
 
 down:
-	@echo "TODO: stop services (next phase)"
+	docker compose down
 
 logs:
-	@echo "TODO: tail service logs (next phase)"
+	docker compose logs -f
+
+build:
+	docker compose build
+
+ps:
+	docker compose ps
 
 test:
-	@echo "TODO: run tests (next phase)"
+	cd backend && uv run pytest
+	cd modelserver && uv run pytest
+	cd guardrails && uv run pytest
 
 lint:
-	@echo "TODO: run lint (next phase)"
-
-format:
-	@echo "TODO: run formatter (next phase)"
-
-seed:
-	@echo "TODO: seed dev data (next phase)"
+	cd backend && uv run ruff check .
+	cd modelserver && uv run ruff check .
+	cd guardrails && uv run ruff check .
