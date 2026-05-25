@@ -1,6 +1,7 @@
 # Env
 .env
 .env.*
+!.env.example
 
 # Local Claude behavior (personal, not team)
 CLAUDE.local.md

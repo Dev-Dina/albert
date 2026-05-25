@@ -35,6 +35,22 @@ make down    # stop
 `.env` is local only and is never copied into images. Vault runs in **dev mode for
 local use only** — do not use in production.
 
+## Configuration
+
+- Copy the example env file before running: `cp .env.example .env`.
+- `.env` is git-ignored; `.env.example` is tracked (committed) and is the source of defaults.
+- Backend config is centralized in `backend/app/core/config.py` (pydantic-settings); tests do
+  not require a real `.env` (every setting has a default).
+
+## Backend Endpoints
+
+- `GET /health` — fast liveness check returning `status`, `service`, `app`, `environment`.
+  Does not check Vault, so it stays fast and stable.
+- `GET /status/dependencies` — dependency reachability (currently Vault only). Returns 200 even
+  when Vault is down: `{"vault": {"reachable": false}}`.
+
+Vault dev server: `http://localhost:8200` (root token `dev-root-token`, **local only**).
+
 ## Service Ports
 
 | Service     | Host → Container       | Notes |
