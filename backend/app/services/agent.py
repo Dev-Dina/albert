@@ -4,8 +4,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.embedder import EmbedderAdapter
 from app.adapters.llm import LLMAdapter
+from app.adapters.reranker import RerankerAdapter
 from app.core.config import settings
 from app.tools.capture_lead import CAPTURE_LEAD_TOOL, capture_lead
 from app.tools.escalate import ESCALATE_TOOL, escalate
@@ -37,6 +40,9 @@ async def run_agent(
     conversation_id: str,
     user_message: str,
     llm: LLMAdapter,
+    db: AsyncSession | None = None,
+    embedder: EmbedderAdapter | None = None,
+    reranker: RerankerAdapter | None = None,
     persona: str = "Albert",
     business_name: str = "the business",
 ) -> AgentResult:
@@ -104,6 +110,9 @@ async def run_agent(
                     tool_name=tool_name,
                     tool_args=tool_args,
                     tenant_id=tenant_id,
+                    db=db,
+                    embedder=embedder,
+                    reranker=reranker,
                 )
 
                 messages.append(
@@ -139,11 +148,26 @@ async def run_agent(
 
 
 async def _dispatch_tool(
-    *, tool_name: str, tool_args: dict, tenant_id: str
+    *,
+    tool_name: str,
+    tool_args: dict,
+    tenant_id: str,
+    db: AsyncSession | None = None,
+    embedder: EmbedderAdapter | None = None,
+    reranker: RerankerAdapter | None = None,
 ) -> object:
     """Route a tool call to the correct handler."""
     if tool_name == "rag_search":
-        return await rag_search(tenant_id=tenant_id, query=tool_args["query"])
+        if db is None or embedder is None or reranker is None:
+            logger.warning("rag_search called without db/embedder/reranker — returning empty")
+            return []
+        return await rag_search(
+            tenant_id=tenant_id,
+            query=tool_args["query"],
+            db=db,
+            embedder=embedder,
+            reranker=reranker,
+        )
 
     if tool_name == "capture_lead":
         return await capture_lead(tenant_id=tenant_id, **tool_args)

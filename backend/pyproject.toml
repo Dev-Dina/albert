@@ -11,17 +11,24 @@ dependencies = [
     "sqlalchemy[asyncio]",
     "asyncpg",
     "alembic",
+    "google-genai",
+    "cohere",
+    "pgvector",
+    "jinja2",
+    "pydantic[email]",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-asyncio",
     "ruff",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100

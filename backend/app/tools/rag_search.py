@@ -1,8 +1,13 @@
 import logging
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.adapters.embedder import EmbedderAdapter
+from app.adapters.reranker import RerankerAdapter
+from app.services.retrieval import retrieve
+
 logger = logging.getLogger(__name__)
 
-# Tool definition in the format the Groq/OpenAI API expects.
 RAG_SEARCH_TOOL: dict = {
     "type": "function",
     "function": {
@@ -25,20 +30,28 @@ RAG_SEARCH_TOOL: dict = {
 }
 
 
-async def rag_search(*, tenant_id: str, query: str) -> list[dict]:
-    """Search the tenant's vector store and return ranked chunks.
-
-    retrieval_service is not yet built — returns a placeholder until Owner A
-    delivers the RAG layer. Replace this body once retrieval_service exists.
-    """
+async def rag_search(
+    *,
+    tenant_id: str,
+    query: str,
+    db: AsyncSession,
+    embedder: EmbedderAdapter,
+    reranker: RerankerAdapter,
+) -> list[dict]:
+    """Search the tenant's vector store and return ranked parent chunks."""
     logger.debug("rag_search tenant=%s query=%r", tenant_id, query)
-    # TODO: replace with real call once retrieval_service is available:
-    # from app.services.retrieval import retrieval_service
-    # return await retrieval_service.search(tenant_id=tenant_id, query=query)
+    results = await retrieve(
+        tenant_id=tenant_id,
+        query=query,
+        db=db,
+        embedder=embedder,
+        reranker=reranker,
+    )
     return [
         {
-            "chunk_id": "placeholder-1",
-            "content": "This is a placeholder result. RAG retrieval not yet wired.",
-            "score": 0.0,
+            "chunk_id": r.parent_chunk_id,
+            "content": r.text,
+            "score": r.score,
         }
+        for r in results
     ]

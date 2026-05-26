@@ -1,0 +1,39 @@
+name: RAG Eval
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/services/retrieval.py"
+      - "backend/app/services/ingestion.py"
+      - "backend/app/adapters/embedder.py"
+      - "backend/app/adapters/reranker.py"
+      - "backend/app/repos/chunk_repo.py"
+      - "evals/**"
+
+jobs:
+  rag-eval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run unit tests (retrieval + ingestion + isolation)
+        run: uv run pytest tests/test_ingestion.py tests/test_retrieval.py tests/test_chunk_isolation.py -v
+
+      - name: Run RAG eval harness
+        working-directory: ${{ github.workspace }}
+        run: PYTHONPATH=. uv run --directory backend python -m evals.rag_eval --golden evals/rag_golden.jsonl

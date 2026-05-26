@@ -4,7 +4,8 @@ Shared Claude Code instructions for Albert.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan.
+shell commands, and other important information, read the current plan:
+[specs/002-rag-pipeline/plan.md](specs/002-rag-pipeline/plan.md)
 <!-- SPECKIT END -->
 
 ## Project

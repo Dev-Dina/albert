@@ -34,10 +34,13 @@ class Settings(BaseSettings):
     guardrails_url: str = "http://guardrails:8010"
     service_auth_token: SecretStr = SecretStr("dev-service-token")
 
-    groq_api_key: SecretStr = SecretStr("dev-groq-key-change-me")
-    groq_model: str = "llama-3.3-70b-versatile"
+    gemini_api_key: SecretStr = SecretStr("dev-gemini-key-change-me")
+    gemini_model: str = "gemini-2.0-flash"
+    gemini_embedding_model: str = "text-embedding-004"
     agent_max_iterations: int = 5
     agent_max_tokens_per_turn: int = 1024
+    retrieval_top_k: int = 5
+    reranker_candidate_k: int = 20
 
 
 settings = Settings()
