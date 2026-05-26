@@ -15,17 +15,13 @@ def test_health() -> None:
     }
 
 
-def test_check_input_placeholder(service_token: str) -> None:
-    response = client.post(
-        "/check-input", headers={"Authorization": f"Bearer {service_token}"}
-    )
+def test_check_input_placeholder() -> None:
+    response = client.post("/check-input")
     assert response.status_code == 200
     assert response.json() == {"allowed": True, "reason": "phase_1_placeholder"}
 
 
-def test_check_output_placeholder(service_token: str) -> None:
-    response = client.post(
-        "/check-output", headers={"Authorization": f"Bearer {service_token}"}
-    )
+def test_check_output_placeholder() -> None:
+    response = client.post("/check-output")
     assert response.status_code == 200
     assert response.json() == {"allowed": True, "reason": "phase_1_placeholder"}

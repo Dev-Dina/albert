@@ -92,30 +92,6 @@ docker compose exec backend uv run alembic upgrade head
 The local command requires `DATABASE_URL` to point at a database reachable from the host
 (e.g. `postgresql+asyncpg://postgres:postgres@localhost:5433/albert`).
 
-## Authentication (dev)
-
-Seed the dev platform user (idempotent) after migrations:
-
-```bash
-docker compose exec backend uv run python scripts/seed_dev_user.py
-```
-
-This creates a `tenant_manager` user — `admin@example.com` / `admin123` (**local dev only**).
-
-Log in to get a Bearer token:
-
-```bash
-POST http://localhost:8000/api/v1/auth/login
-{ "email": "admin@example.com", "password": "admin123" }
-```
-
-Then call the authenticated identity endpoint with the returned token:
-
-```bash
-GET http://localhost:8000/api/v1/auth/me
-Authorization: Bearer <access_token>
-```
-
 ## Service Ports
 
 | Service     | Host → Container       | Notes |
