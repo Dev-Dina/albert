@@ -11,8 +11,10 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.core.request_context import get_request_id
 
 _TIMEOUT = httpx.Timeout(10.0)
+_REQUEST_ID_HEADER = "X-Request-ID"
 
 
 def service_auth_headers() -> dict[str, str]:
@@ -24,11 +26,20 @@ def service_auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _outbound_headers() -> dict[str, str]:
+    """Service-auth header plus the propagated ``X-Request-ID`` when one is set."""
+    headers = service_auth_headers()
+    request_id = get_request_id()
+    if request_id:
+        headers[_REQUEST_ID_HEADER] = request_id
+    return headers
+
+
 async def _post(base_url: str, path: str, payload: dict[str, Any]) -> httpx.Response:
-    """POST ``payload`` to ``base_url + path`` with the service-auth header."""
+    """POST ``payload`` to ``base_url + path`` with auth + request-id headers."""
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         return await client.post(
-            f"{base_url}{path}", json=payload, headers=service_auth_headers()
+            f"{base_url}{path}", json=payload, headers=_outbound_headers()
         )
 
 
