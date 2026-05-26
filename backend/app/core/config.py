@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore",
+        extra="forbid",
     )
 
     app_name: str = "albert"
@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     modelserver_url: str = "http://modelserver:8020"
     guardrails_url: str = "http://guardrails:8010"
     service_auth_token: SecretStr = SecretStr("dev-service-token")
+
+    groq_api_key: SecretStr = SecretStr("dev-groq-key-change-me")
+    groq_model: str = "llama-3.3-70b-versatile"
+    agent_max_iterations: int = 5
+    agent_max_tokens_per_turn: int = 1024
 
 
 settings = Settings()
