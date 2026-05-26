@@ -1,0 +1,399 @@
+/*
+ * Albert Widget — Glassmorphism light theme.
+ * Design tokens are CSS custom properties so themes can be overridden from
+ * the WidgetPublicView.theme JSON without rebuilding.
+ */
+
+:root {
+  --albert-primary: #2563eb;
+  --albert-primary-hover: #1d4ed8;
+  --albert-on-primary: #ffffff;
+  --albert-accent: #059669;
+  --albert-bg: rgba(255, 255, 255, 0.85);
+  --albert-bg-solid: #ffffff;
+  --albert-surface: rgba(255, 255, 255, 0.6);
+  --albert-fg: #0f172a;
+  --albert-fg-muted: #64748b;
+  --albert-border: rgba(15, 23, 42, 0.08);
+  --albert-divider: rgba(15, 23, 42, 0.06);
+  --albert-user-bg: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+  --albert-user-fg: #ffffff;
+  --albert-assistant-bg: rgba(241, 245, 253, 0.9);
+  --albert-assistant-fg: #0f172a;
+  --albert-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --albert-shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --albert-shadow-lg: 0 12px 40px rgba(15, 23, 42, 0.12);
+  --albert-radius-sm: 8px;
+  --albert-radius-md: 12px;
+  --albert-radius-lg: 16px;
+  --albert-radius-bubble: 18px;
+  --albert-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --albert-duration: 220ms;
+  --albert-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--albert-font);
+  color: var(--albert-fg);
+  background:
+    radial-gradient(1200px 600px at 0% 0%, rgba(37, 99, 235, 0.08), transparent 60%),
+    radial-gradient(1000px 500px at 100% 100%, rgba(79, 70, 229, 0.07), transparent 60%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- Shell ---------- */
+
+.albert-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--albert-bg);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--albert-border);
+  border-radius: var(--albert-radius-lg);
+  box-shadow: var(--albert-shadow-lg);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* ---------- Header ---------- */
+
+.albert-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--albert-divider);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.albert-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--albert-user-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+.albert-header__info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.albert-header__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--albert-fg);
+  line-height: 1.2;
+}
+
+.albert-header__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--albert-fg-muted);
+  margin-top: 2px;
+}
+
+.albert-header__status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--albert-accent);
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18);
+}
+
+/* ---------- Messages ---------- */
+
+.albert-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.2) transparent;
+}
+
+.albert-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.albert-messages::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18);
+  border-radius: 999px;
+}
+
+.albert-message {
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: var(--albert-radius-bubble);
+  line-height: 1.45;
+  font-size: 14px;
+  word-wrap: break-word;
+  animation: albert-msg-in var(--albert-duration) var(--albert-easing);
+  box-shadow: var(--albert-shadow-sm);
+}
+
+.albert-message--user {
+  align-self: flex-end;
+  background: var(--albert-user-bg);
+  color: var(--albert-user-fg);
+  border-bottom-right-radius: 6px;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.22);
+}
+
+.albert-message--assistant {
+  align-self: flex-start;
+  background: var(--albert-assistant-bg);
+  color: var(--albert-assistant-fg);
+  border: 1px solid var(--albert-border);
+  border-bottom-left-radius: 6px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+@keyframes albert-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ---------- Typing indicator ---------- */
+
+.albert-typing {
+  align-self: flex-start;
+  background: var(--albert-assistant-bg);
+  border: 1px solid var(--albert-border);
+  border-radius: var(--albert-radius-bubble);
+  border-bottom-left-radius: 6px;
+  padding: 12px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: var(--albert-shadow-sm);
+}
+
+.albert-typing__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--albert-fg-muted);
+  animation: albert-typing 1.2s infinite ease-in-out;
+}
+
+.albert-typing__dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.albert-typing__dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes albert-typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* ---------- Composer ---------- */
+
+.albert-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px;
+  border-top: 1px solid var(--albert-divider);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.albert-composer__input {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: var(--albert-radius-md);
+  border: 1px solid var(--albert-border);
+  background: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--albert-fg);
+  outline: none;
+  min-height: 44px;
+  transition:
+    border-color var(--albert-duration) var(--albert-easing),
+    box-shadow var(--albert-duration) var(--albert-easing),
+    background-color var(--albert-duration) var(--albert-easing);
+}
+
+.albert-composer__input::placeholder {
+  color: var(--albert-fg-muted);
+}
+
+.albert-composer__input:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.albert-composer__input:focus {
+  border-color: var(--albert-primary);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+.albert-composer__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.albert-composer__send {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--albert-radius-md);
+  background: var(--albert-user-bg);
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--albert-duration) var(--albert-easing),
+    box-shadow var(--albert-duration) var(--albert-easing),
+    opacity var(--albert-duration) var(--albert-easing);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+}
+
+.albert-composer__send:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.32);
+}
+
+.albert-composer__send:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.albert-composer__send:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px #ffffff,
+    0 0 0 5px var(--albert-primary);
+}
+
+.albert-composer__send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.albert-composer__send svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---------- States ---------- */
+
+.albert-loading,
+.albert-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 14px;
+  color: var(--albert-fg-muted);
+  padding: 32px;
+  text-align: center;
+}
+
+.albert-error {
+  color: #b91c1c;
+}
+
+.albert-loading__dots {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.albert-loading__dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--albert-primary);
+  animation: albert-typing 1.2s infinite ease-in-out;
+}
+
+.albert-loading__dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.albert-loading__dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 420px) {
+  .albert-chat {
+    border-radius: 0;
+    border: 0;
+  }
+
+  .albert-message {
+    max-width: 88%;
+    font-size: 15px;
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .albert-message,
+  .albert-typing__dot,
+  .albert-loading__dots span {
+    animation: none;
+  }
+  .albert-composer__input,
+  .albert-composer__send {
+    transition: none;
+  }
+}

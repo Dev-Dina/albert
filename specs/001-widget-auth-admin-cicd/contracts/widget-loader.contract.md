@@ -43,7 +43,11 @@ loader and the iframe bundle MUST honor it byte-for-byte.
   form-action 'none';
   ```
 - `X-Frame-Options:` legacy mirror of `frame-ancestors` for older crawlers.
-- Body: minimal HTML that loads `/widget/bundle-<sha>.js` as a single `<script type="module">`.
+- Body: minimal HTML that loads `/widget/bundle-<sha>.js` as a single
+  `<script type="module">`. If the build emitted a CSS sidecar (esbuild
+  bundles `.css` imports into a same-sha file), the HTML also includes
+  `<link rel="stylesheet" href="/widget/bundle-<sha>.css">` in `<head>`.
+  Both filenames are read from `widget/dist/bundle-manifest.json`.
 
 **Behavior**:
 - If the resolved widget is disabled, return **404** with an empty body. (Not 403:
@@ -53,12 +57,15 @@ loader and the iframe bundle MUST honor it byte-for-byte.
   rendering. The admin app surfaces the "zero allowed origins" state separately
   (Edge Cases).
 
-## `GET /widget/bundle-<sha>.js`
+## `GET /widget/bundle-<sha>.{js,css}`
 
 **Response**:
-- `Content-Type: application/javascript; charset=utf-8`
+- `Content-Type: application/javascript; charset=utf-8` (`.js`) or
+  `text/css; charset=utf-8` (`.css`).
 - `Cache-Control: public, max-age=31536000, immutable`
-- Body: the compiled widget bundle.
+- Body: the compiled widget bundle or sidecar stylesheet. Only filenames
+  matching `^bundle-[0-9a-f]+\.(js|css)$` are served; everything else
+  returns 404.
 
 **Bundle runtime contract** (the iframe code):
 1. On load, read `widget_id` from `location.search`.
