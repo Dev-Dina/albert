@@ -19,9 +19,6 @@ COPY app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
 
-# Dev/ops scripts (e.g. seed_dev_user.py)
-COPY scripts ./scripts
-
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
