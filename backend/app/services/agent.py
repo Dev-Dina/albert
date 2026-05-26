@@ -45,6 +45,7 @@ async def run_agent(
     reranker: RerankerAdapter | None = None,
     persona: str = "Albert",
     business_name: str = "the business",
+    history: list[dict] | None = None,
 ) -> AgentResult:
     """Run the bounded agent loop for one user turn.
 
@@ -58,10 +59,10 @@ async def run_agent(
         max_iterations=settings.agent_max_iterations,
     )
 
-    messages: list[dict] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ]
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
 
     iterations = 0
     tool_calls_made: list[str] = []

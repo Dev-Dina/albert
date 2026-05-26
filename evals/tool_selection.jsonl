@@ -1,0 +1,15 @@
+{"message": "What are your opening hours?", "expected_tool": "rag_search"}
+{"message": "Do you offer free returns?", "expected_tool": "rag_search"}
+{"message": "How long does shipping take?", "expected_tool": "rag_search"}
+{"message": "What is the price of the premium plan?", "expected_tool": "rag_search"}
+{"message": "How do I contact customer support?", "expected_tool": "rag_search"}
+{"message": "I'd like to leave my email so someone can follow up with me", "expected_tool": "capture_lead"}
+{"message": "Can you have a sales rep get in touch with me? My email is example@example.com", "expected_tool": "capture_lead"}
+{"message": "Please contact me, I want to learn more about your services", "expected_tool": "capture_lead"}
+{"message": "This is completely unacceptable, I want to speak to a manager right now", "expected_tool": "escalate"}
+{"message": "I have been waiting for 3 weeks and nobody has helped me, I am furious", "expected_tool": "escalate"}
+{"message": "I need urgent help, this is an emergency situation", "expected_tool": "escalate"}
+{"message": "Hello there!", "expected_tool": null}
+{"message": "Thank you, have a good day", "expected_tool": null}
+{"message": "Yes, that answers my question", "expected_tool": null}
+{"message": "No thanks, I'm all set", "expected_tool": null}

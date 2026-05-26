@@ -9,6 +9,9 @@ on:
       - "backend/app/adapters/reranker.py"
       - "backend/app/repos/chunk_repo.py"
       - "evals/**"
+      - "backend/app/services/router.py"
+      - "backend/app/services/memory.py"
+      - "backend/app/services/agent.py"
 
 jobs:
   rag-eval:
@@ -37,3 +40,7 @@ jobs:
       - name: Run RAG eval harness
         working-directory: ${{ github.workspace }}
         run: PYTHONPATH=. uv run --directory backend python -m evals.rag_eval --golden evals/rag_golden.jsonl
+
+      - name: Run tool-selection eval harness
+        working-directory: ${{ github.workspace }}
+        run: python -m evals.tool_selection_eval --golden evals/tool_selection.jsonl --thresholds evals/eval_thresholds.yaml

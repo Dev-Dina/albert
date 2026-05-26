@@ -16,6 +16,7 @@ dependencies = [
     "pgvector",
     "jinja2",
     "pydantic[email]",
+    "redis[asyncio]",
 ]
 
 [dependency-groups]

@@ -42,5 +42,8 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 5
     reranker_candidate_k: int = 20
 
+    redis_session_ttl: int = 1800
+    router_confidence_threshold: float = 0.7
+
 
 settings = Settings()
