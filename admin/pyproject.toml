@@ -1,0 +1,24 @@
+[project]
+name = "albert-admin"
+version = "0.1.0"
+description = "Albert tenant-admin app (Streamlit)."
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.39",
+    "httpx",
+    "pydantic",
+    "pydantic-settings",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
