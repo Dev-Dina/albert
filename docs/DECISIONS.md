@@ -166,3 +166,26 @@ production model for Owner C visitor-intent routing.
 **Consequence**: the ONNX model remains the challenger and can be promoted later
 after serving hardening. Highest F1 did not automatically win; production choice
 balances quality, latency, simplicity, and runtime risk.
+
+---
+
+## ADR-010: Guardrails Engine
+
+**Decision**: ship deterministic rules-first platform guardrails for Phase 6.
+
+**Context**: The project needs always-on platform rails, tenant rails that cannot
+weaken platform protections, and red-team gates with a 1.00 pass-rate threshold.
+The serving container must stay lean.
+
+**Rationale**:
+
+- Deterministic rules are inspectable, cheap, and easy to test locally.
+- They avoid adding NeMo, transformers, or another heavy runtime dependency.
+- They make red-team failures concrete: a probe either triggers the expected
+  category/action or it does not.
+- They keep platform DENY precedence simple and enforceable.
+
+**Consequence**: Phase 6 blocks common injection, jailbreak, cross-tenant,
+system-prompt extraction, tenant override, tool-abuse, and secret-extraction
+patterns. Phase 7 remains responsible for deeper redaction hardening and broader
+leak-surface coverage.

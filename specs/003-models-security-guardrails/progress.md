@@ -18,7 +18,7 @@ Central status tracker for Models, Security & Guardrails.
 | Phase 4D.6 | Vault secret inventory + Jaeger readiness | PASS |
 | Phase 4E | LLM zero-shot baseline | PASS |
 | Phase 5 | Production model decision | PASS |
-| Phase 6 | Guardrails + red-team suite | PENDING |
+| Phase 6 | Guardrails + red-team suite | PASS |
 | Phase 7 | Redaction hardening / credit-card add-on | PENDING |
 | Phase 8 | CI handoff | PENDING |
 
@@ -37,6 +37,8 @@ Central status tracker for Models, Security & Guardrails.
 | Model card | `modelserver/MODEL_CARD.md` |
 | Classifier eval runner | `evals/classifier/run.py` |
 | Secret inventory | `docs/SECRETS.md` |
+| Red-team fixtures | `evals/redteam_cross_tenant/fixtures/redteam_cases.jsonl` |
+| Red-team runner | `evals/redteam_cross_tenant/run.py` |
 
 ## Production Model Choice
 
@@ -80,10 +82,26 @@ LLM zero-shot notes:
 
 ## Open Risks
 
-- Guardrails still need real rails and red-team suite if not already implemented.
 - CI is not wired yet.
-- Credit-card redaction is specified but not yet implemented.
+- Redaction hardening remains Phase 7, especially broader credit-card coverage
+  and exception/access-log leak handling.
 - Endpoint migration to target names requires Owner B/D coordination.
+
+## Guardrails / Red-Team
+
+- Phase 6 approach: deterministic rules-first platform rails.
+- Endpoints implemented: `/guardrails/input`, `/check-input`,
+  `/guardrails/output`, `/check-output`.
+- Platform rails block prompt injection, jailbreaks, system/developer prompt
+  extraction, cross-tenant requests, fake tenant override attempts, tool abuse,
+  secret extraction, and attempts to disable guardrails.
+- Tenant rails can only narrow behavior with allowed/blocked topics; they cannot
+  weaken platform DENY.
+- Redaction covers fake API keys/tokens, emails, phones, token-like strings, and
+  credit-card-like strings in the guardrails sidecar.
+- Red-team fixture path: `evals/redteam_cross_tenant/fixtures/redteam_cases.jsonl`.
+- Red-team runner command: `uv run --project guardrails python -m evals.redteam_cross_tenant.run`.
+- Pass threshold: root `eval_thresholds.yaml` `redteam.required_pass_rate = 1.00`.
 
 ## Tracing
 
@@ -119,4 +137,4 @@ LLM zero-shot notes:
 
 ## Next Action
 
-Phase 6: guardrails + red-team suite.
+Phase 7: redaction hardening / credit-card add-on.
