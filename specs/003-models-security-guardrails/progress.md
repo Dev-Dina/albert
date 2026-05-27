@@ -21,7 +21,7 @@ Central status tracker for Models, Security & Guardrails.
 | Phase 6 | Guardrails + red-team suite | PASS |
 | Phase 7A | Redaction hardening spec-readiness | PASS |
 | Phase 7B | Redaction hardening implementation | PASS |
-| Phase 8 | CI handoff | NEXT |
+| Phase 8 | CI handoff | PASS |
 
 ## Key Artifacts
 
@@ -38,8 +38,10 @@ Central status tracker for Models, Security & Guardrails.
 | Model card | `modelserver/MODEL_CARD.md` |
 | Classifier eval runner | `evals/classifier/run.py` |
 | Secret inventory | `docs/SECRETS.md` |
+| CI handoff | `docs/OWNER_C_CI_HANDOFF.md` |
 | Red-team fixtures | `evals/redteam_cross_tenant/fixtures/redteam_cases.jsonl` |
 | Red-team runner | `evals/redteam_cross_tenant/run.py` |
+| Redaction runner | `evals/redaction/run.py` |
 
 ## Production Model Choice
 
@@ -83,7 +85,7 @@ LLM zero-shot notes:
 
 ## Open Risks
 
-- CI is not wired yet.
+- CI workflow wiring remains Owner D work.
 - Full uvicorn/access-log configuration remains an Owner A/D/ops handoff if the
   deployment later enables raw request-body access logging.
 - Endpoint migration to target names requires Owner B/D coordination.
@@ -166,4 +168,5 @@ LLM zero-shot notes:
 
 ## Next Action
 
-Phase 8: CI handoff for classifier, red-team, redaction, and smoke gates.
+Owner C is complete. Next action is Owner D CI workflow wiring using
+`docs/OWNER_C_CI_HANDOFF.md`.
