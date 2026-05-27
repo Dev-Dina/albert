@@ -148,16 +148,57 @@ uses the classical artifact.
 
 ## LLM Zero-Shot Baseline
 
-Status: pending mandatory Phase 4 follow-up.
+Status: complete for Phase 4E; evaluated only, not selected as the production
+model.
 
-Must use the same held-out test set as the classical baseline. Record prompt,
-model/provider/version, macro-F1, per-class F1, latency, and cost assumptions.
+Approach:
+
+- Provider: Gemini
+- Model: `gemini-2.5-flash-lite`
+- Prompt version: `intent-zero-shot-v2-balanced-labels`
+- Zero-shot only; no examples or fine-tuning
+- Reused the same 600-item held-out test split as the classical and DL/ONNX
+  baselines
+
+Metrics:
+
+| Metric | Value |
+|---|---|
+| Macro-F1 | `0.5036` |
+| Test size | `600` |
+| Failed calls | `0` |
+| Latency estimate | `1107.26 ms/item` |
+| Cost | Not recorded; token usage captured in metrics |
+
+Per-class F1:
+
+| Label | F1 |
+|---|---|
+| `faq_rag` | `0.4713` |
+| `lead_capture` | `0.4720` |
+| `human_escalate` | `0.5550` |
+| `spam` | `0.9873` |
+| `other_agent` | `0.0325` |
+
+Metrics path:
+`training/intent_classifier/artifacts/llm_zero_shot_metrics.json`
+
+Predictions path:
+`training/intent_classifier/artifacts/llm_zero_shot_predictions.jsonl`
+
+Observed behavior: the zero-shot LLM performed well on `spam` but poorly on
+`other_agent`, often collapsing project-specific routing cases into `faq_rag`.
+The likely reason is that `other_agent` is an Albert routing convention rather
+than a naturally obvious semantic intent category. This result supports serving
+a supervised lean classifier for routing instead of using LLM-per-message
+routing.
 
 ## Production Choice
 
 Interim Phase 4B serving choice: classical TF-IDF + LogisticRegression baseline.
-The production choice remains pending until the mandatory DL/ONNX and LLM
-zero-shot baselines are evaluated on the same held-out split.
+The production choice remains formally finalized in Phase 5. The completed
+three-way comparison strongly favors the supervised lean classifiers over LLM
+routing on both accuracy and latency.
 
 ## Same-Test-Set Comparison
 
@@ -165,7 +206,7 @@ zero-shot baselines are evaluated on the same held-out split.
 |---|---|---:|---:|---:|---:|---|
 | Classical TF-IDF + LogisticRegression | Served interim | `0.9718` | `600` | `0.0101 ms/item` | `$0` | `training/intent_classifier/artifacts/classical_intent_logreg.joblib` |
 | Small DL sklearn MLP exported to ONNX | Evaluated, not selected | `0.9834` | `600` | `0.0419 ms/item` | `$0` | `training/intent_classifier/artifacts/dl_intent_mlp.onnx` |
-| LLM zero-shot | Pending mandatory baseline | TBD | `600` | TBD | TBD | TBD |
+| Gemini zero-shot (`gemini-2.5-flash-lite`) | Evaluated, not selected | `0.5036` | `600` | `1107.26 ms/item` | Token usage captured; dollar cost not recorded | `training/intent_classifier/artifacts/llm_zero_shot_metrics.json` |
 
 ## Serving Notes
 

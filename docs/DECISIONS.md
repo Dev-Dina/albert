@@ -91,3 +91,44 @@ Jaeger all-in-one is lightweight for local demos and exposes the UI at
 No tracing secrets are needed for local Jaeger. If Albert later exports traces
 to a hosted OTLP backend, Owner A should inject exporter credentials through
 env/settings rather than code.
+
+---
+
+## ADR-007: LLM Baseline Provider Fallback
+
+**Primary provider**: Gemini for the mandatory zero-shot intent-classifier
+baseline.
+
+**Fallback provider**: Groq, only as a separate run if Gemini is unavailable.
+
+**Rule**: Do not mix Gemini and Groq predictions in one final comparison metrics
+file. Each run must record provider and model. If a mixed exploratory file is
+ever produced, mark it as mixed and exclude it from Phase 5 production-model
+decision evidence.
+
+**Secret handling**: `GEMINI_API_KEY` and optional `GROQ_API_KEY` come from
+env/settings, with Owner A/Vault injection expected outside local dev. Keys are
+never committed, logged, traced, or written to metrics/model cards.
+
+---
+
+## ADR-008: LLM Zero-Shot Routing Baseline Result
+
+**Run**: Gemini `gemini-2.5-flash-lite`, prompt
+`intent-zero-shot-v2-balanced-labels`, same 600-item held-out split as the
+classical and DL/ONNX baselines.
+
+| Baseline | Macro-F1 | Latency |
+|---|---:|---:|
+| Classical TF-IDF + LogisticRegression | `0.971762` | `0.0101 ms/item` |
+| DL/ONNX TF-IDF + MLPClassifier | `0.9834` | `0.0419 ms/item` |
+| Gemini zero-shot | `0.503639` | `1107.26 ms/item` |
+
+The LLM baseline performs well on `spam` (`0.9873` F1) but poorly on
+`other_agent` (`0.0325` F1), often mapping project-specific routing fallback
+cases to `faq_rag`. This is expected: `other_agent` is an Albert routing
+convention, not a naturally obvious semantic intent category.
+
+**Decision impact**: this supports shipping a supervised lean classifier for
+visitor-intent routing, not LLM-per-message routing. The formal production model
+choice remains recorded in Phase 5.
