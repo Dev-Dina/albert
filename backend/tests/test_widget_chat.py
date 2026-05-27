@@ -76,18 +76,30 @@ def test_chat_missing_token_returns_401() -> None:
     assert response.status_code == 401
 
 
-def test_chat_body_with_tenant_id_is_rejected_at_schema_layer() -> None:
-    """FR-009: chat request schema forbids tenant_id (extra='forbid')."""
+def test_chat_body_with_foreign_tenant_id_is_ignored_and_logged(caplog) -> None:
+    """T048 / FR-009: a `tenant_id` field in the body is dropped on parse and
+    the request is served under the token's tenant. The event is logged as
+    `body_tenant_id_ignored` (no raw tenant ids per FR-015c)."""
     _wire_widget_session_dep()
-    response = client.post(
-        "/api/v1/widget/chat",
-        headers={"Authorization": f"Bearer {_mint_token()}"},
-        json={
-            "message": "Hi",
-            "tenant_id": str(uuid.uuid4()),
-        },
-    )
-    assert response.status_code == 422
+    foreign_tenant_id = str(uuid.uuid4())
+    with caplog.at_level("WARNING"):
+        response = client.post(
+            "/api/v1/widget/chat",
+            headers={"Authorization": f"Bearer {_mint_token()}"},
+            json={
+                "message": "Hi",
+                "tenant_id": foreign_tenant_id,
+            },
+        )
+    assert response.status_code == 200, response.text
+    # The body field was ignored — request was served under the token's tenant.
+    body = response.json()
+    assert "Hi" in body["message"]
+    # A structured log entry was emitted for operator visibility.
+    assert any("body_tenant_id_ignored" in record.message for record in caplog.records)
+    # The raw foreign tenant_id MUST NOT appear in any log line (FR-015c).
+    for record in caplog.records:
+        assert foreign_tenant_id not in record.getMessage()
 
 
 def test_chat_message_too_long_returns_422() -> None:

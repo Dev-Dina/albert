@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.middleware.widget_cors import WidgetCorsMiddleware
 from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.health import router as health_router
@@ -20,6 +21,7 @@ install_redaction_filter()
 
 app = FastAPI(title="Albert Backend", lifespan=lifespan)
 app.add_middleware(RequestIdMiddleware)
+app.add_middleware(WidgetCorsMiddleware)
 
 app.include_router(health_router)
 app.include_router(status_router)
