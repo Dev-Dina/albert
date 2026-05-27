@@ -52,8 +52,8 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 - Labels: `faq_rag`, `lead_capture`, `human_escalate`, `spam`, `other_agent`.
 - Dataset selection with recorded source + SHA-256.
 - Offline training: TF-IDF + LogisticRegression / LinearSVC → `.joblib` artifact (serving stays lean).
-- Required comparison baselines before serving choice: classical ML (TF-IDF + LogisticRegression or LinearSVC), DL exported to ONNX and served via onnxruntime, and an offline LLM zero-shot baseline.
-- `modelserver/MODEL_CARD.md`: task, dataset source + SHA-256, per-baseline macro-F1/latency/cost/artifact-size/dependency impact, served-model rationale, served artifact SHA-256.
+- Required comparison baselines before production choice: classical ML (TF-IDF + LogisticRegression or LinearSVC), DL exported to ONNX and served via onnxruntime, and an offline LLM zero-shot baseline. All baselines use the same held-out test set.
+- `modelserver/MODEL_CARD.md`: task, dataset source + SHA-256, held-out split identity, per-baseline macro-F1/per-class F1/latency/cost/artifact-size/dependency impact, production-model rationale, served artifact SHA-256.
 - Artifact SHA-256 verification at boot (mismatch ⇒ refuse to serve); `/health` reports `model_version`, `artifact_sha256`, `loaded`.
 - Confidence behavior: `< 0.70` ⇒ `other_agent` (abstain).
 - *FR-C06/FR-C07/FR-C08/FR-C09/FR-C10.*
@@ -94,7 +94,7 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 - Model card includes the mandatory three-model comparison: classical ML, DL/ONNX, and LLM zero-shot baseline. *(WS4)*
 - Classifier input carries no `tenant_id`; below-threshold predictions abstain to `other_agent`. *(WS4)*
 - Guardrails enforce platform rails always-on; tenant rails cannot weaken a platform DENY. *(WS5)*
-- Redaction runs before any log/trace; a fake-API-key test proves no raw secret leaks. *(WS2 ✅; extended in WS6)*
+- Redaction runs before any log/trace/memory/error output; a fake-API-key test proves no raw secret leaks. *(WS2 ✅; extended in WS6)*
 - `API→modelserver` and `API→guardrails` require a verified service token and fail closed without it. *(WS1 ✅)*
 - Every request is traceable via `request_id` / `X-Request-ID` end-to-end. *(WS2 ✅)*
 - Red-team CI gate passes at the required rates and goes red on any safety regression. *(WS6)*

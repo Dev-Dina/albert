@@ -128,13 +128,14 @@ The label set matches Owner B's router/agent consumption:
 - **No `torch`, no `transformers`** in the serving container (constitution + project rule).
   Any deep-learning training/export happens **offline**; only the exported artifact is served.
 - **Model card required** (`modelserver/MODEL_CARD.md` in a later phase): task, dataset source +
-  SHA-256, metrics, chosen deployment model, the served **artifact SHA-256**, and the mandatory
+  SHA-256, metrics, chosen production model, the served **artifact SHA-256**, and the mandatory
   three-model comparison.
 - **Mandatory model comparison:** the classifier phase must evaluate and document all three
   baselines before choosing the served model: classical ML (TF-IDF + LogisticRegression or
   LinearSVC), DL exported to ONNX and served via onnxruntime, and an offline LLM zero-shot
-  baseline. The comparison records macro-F1, latency, cost, artifact size, and serving/dependency
-  impact in `MODEL_CARD.md`.
+  baseline. All three baselines use the **same held-out test set**. The comparison records
+  macro-F1, per-class F1, latency, cost, artifact size, and serving/dependency impact in
+  `MODEL_CARD.md`, then states the selected production model and rationale.
 - **Artifact hash check at boot**: the modelserver computes the SHA-256 of the loaded artifact
   and compares it to a pinned value. On mismatch it **refuses to serve** (fails closed); `/health`
   reports `model_version`, `artifact_sha256`, and `loaded: true|false`.
@@ -189,8 +190,9 @@ The label set matches Owner B's router/agent consumption:
 
 ## 7. Redaction contract
 
-- **Redact before logs, traces, and memory.** Raw secrets and unredacted sensitive messages must
-  never reach a log line, a trace span, or stored conversation memory.
+- **Redact before logs, traces, memory, and error outputs.** Raw secrets and unredacted sensitive
+  messages must never reach a log line, a trace span, stored conversation memory, exception
+  response, traceback surface, or other error output.
 - Detectors (regex-first; see decision O-6): email, phone, credit-card, API keys / tokens /
   secrets, and the agreed PII set.
 - Applied on the input-logging path and on output-to-user / output-persistence.

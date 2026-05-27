@@ -33,8 +33,8 @@ Tasks are grouped by the seven Owner C workstreams (each notes its phase). Check
 - [ ] **T4.2b** Required LLM zero-shot baseline: offline eval only; record prompt/version/provider/cost assumptions without adding runtime dependency.
 - [ ] **T4.3** `modelserver/app/classifier.py` + `schemas.py`: load artifact, predict, `<0.70 → other_agent`; response carries `model_version`, `artifact_sha256`.
 - [ ] **T4.4** Boot-time SHA-256 verification; mismatch ⇒ refuse to serve; `/health` reports `model_version`/`artifact_sha256`/`loaded`.
-- [ ] **T4.5** `modelserver/MODEL_CARD.md` (task, dataset + SHA-256, three-model comparison for classical ML vs DL/ONNX vs LLM zero-shot, served-model rationale, metrics, served artifact SHA-256).
-- [ ] **T4.6** `evals/classifier/run.py` gating on root `eval_thresholds.yaml` → `classifier.macro_f1_min`. **Acceptance:** classifies lean; threshold abstain; tampered artifact refused; no `tenant_id` in input; F1 ≥ gate; model card includes mandatory three-model comparison.
+- [ ] **T4.5** `modelserver/MODEL_CARD.md` (task, dataset + SHA-256, held-out split identity, three-model comparison for classical ML vs DL/ONNX vs LLM zero-shot on the same held-out test set, production-model rationale, macro-F1 + per-class F1 + latency + cost, served artifact SHA-256).
+- [ ] **T4.6** `evals/classifier/run.py` gating on root `eval_thresholds.yaml` → `classifier.macro_f1_min`. **Acceptance:** classifies lean; threshold abstain; tampered artifact refused; no `tenant_id` in input; F1 ≥ gate; model card includes mandatory same-test-set three-model comparison and production choice.
 
 ## Workstream 5 — Guardrails sidecar + tenant/platform rails — Phase 5 (planned)
 - [ ] **T5.1** `guardrails/app/rails.py` input rails (injection/jailbreak/cross-tenant/system-prompt-leak) + output rails (PII/secret redaction, leak/cross-tenant block); `schemas.py` (`allowed/action/categories/redacted_text/reason`).
@@ -42,7 +42,7 @@ Tasks are grouped by the seven Owner C workstreams (each notes its phase). Check
 - [ ] **T5.3** Tests: platform DENY overrides tenant ALLOW; rails block each category; fake `tenant_id` never trusted. **Acceptance:** platform rails always-on; tenant config cannot weaken them.
 
 ## Workstream 6 — Red-team + redaction eval gates — Phase 6 (planned)
-- [ ] **T6.1** `evals/redteam_cross_tenant/run.py` (7 categories) + `evals/redaction/run.py`; fixtures. **Acceptance:** each category blocked/redacted; redaction leak = 0; gates = 1.00 locally.
+- [ ] **T6.1** `evals/redteam_cross_tenant/run.py` (7 categories) + `evals/redaction/run.py`; fixtures. **Acceptance:** each category blocked/redacted; redaction leak = 0 across responses, logs, traces, memory, and error outputs; gates = 1.00 locally.
 - [ ] **T6.2** Make each `evals/<gate>/run.py` emit `GATE=… STATUS=… OBSERVED=… THRESHOLD=…`, exit 0/1/2, append to results jsonl (per `001` contract).
 - [ ] **T6.3** Confirm canonical root `eval_thresholds.yaml` Owner C keys; `validate_thresholds` keeps redteam/redaction = 1.00. `evals/eval_thresholds.yaml` is legacy RAG/router data and must not be used for Owner C gates.
 - [ ] **T6.4** No-heavy-dep CI assertion: serving lockfiles free of torch/transformers.
