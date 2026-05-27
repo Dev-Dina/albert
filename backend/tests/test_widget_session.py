@@ -128,3 +128,103 @@ def test_session_malformed_widget_id_returns_422() -> None:
         json={"widget_id": "not-a-valid-id"},
     )
     assert response.status_code == 422
+
+
+# --- T047 (US2): chat 401 paths for missing / wrong-secret / past-exp tokens. ---
+
+
+def test_chat_missing_authorization_returns_401() -> None:
+    """T047 (a): no Authorization header → 401."""
+    response = client.post("/api/v1/widget/chat", json={"message": "hi"})
+    assert response.status_code == 401
+
+
+def _wire_deps_for_chat_401_tests() -> None:
+    """Stub DB+Vault so the chat dep can run its checks without hitting
+    Postgres. The point of these tests is that the SIGNATURE / EXPIRY check
+    rejects the request — DB and Vault must be reachable enough that the dep
+    *reaches* those checks before any earlier failure short-circuits 500.
+    """
+    from app.api import deps
+    from app.clients import vault_client
+    from app.db.session import get_db
+    from app.repositories import allowed_origin_repo
+
+    class _FakeSession:
+        async def execute(self, *args, **kwargs):
+            class _R:
+                def scalar_one_or_none(self_inner):
+                    return None
+            return _R()
+
+    async def _fake_get_db():
+        yield _FakeSession()
+
+    async def _fake_read_key(tenant_id):
+        return _KEY_MATERIAL
+
+    async def _fake_exists_for_tenant(session, tenant_id, origin):
+        return True
+
+    async def _fake_active_key(db, tenant_id):
+        class _Active:
+            version = 1
+        return _Active()
+
+    app.dependency_overrides[get_db] = _fake_get_db
+    vault_client.read_tenant_widget_signing_key = _fake_read_key  # type: ignore[assignment]
+    allowed_origin_repo.exists_for_tenant = _fake_exists_for_tenant  # type: ignore[assignment]
+    deps._fetch_active_key_version = _fake_active_key  # type: ignore[assignment]
+
+
+def test_chat_token_signed_with_wrong_secret_returns_401() -> None:
+    """T047 (b): HS256 token signed with the wrong key → 401."""
+    _wire_deps_for_chat_401_tests()
+    from jose import jwt as jose_jwt
+
+    bad_key = b"this-is-not-the-tenants-key-3000"
+    claims = {
+        "iss": "albert",
+        "sub": f"widget:{_PUBLIC_WIDGET_ID}",
+        "tnt": str(_TENANT_ID),
+        "wid": str(_WIDGET_ID),
+        "kvr": 1,
+        "org": _ORIGIN,
+        "iat": 0,
+        "exp": 9999999999,
+    }
+    token = jose_jwt.encode(claims, bad_key, algorithm="HS256")
+    response = client.post(
+        "/api/v1/widget/chat",
+        headers={"Authorization": f"Bearer {token}", "Origin": _ORIGIN},
+        json={"message": "hi"},
+    )
+    assert response.status_code == 401
+
+
+def test_chat_expired_token_returns_401() -> None:
+    """T047 (c): token whose exp is > clock-skew seconds in the past → 401."""
+    _wire_deps_for_chat_401_tests()
+    from app.core.security import mint_widget_session_token
+    from jose import jwt as jose_jwt
+
+    claims = {
+        "iss": "albert",
+        "sub": f"widget:{_PUBLIC_WIDGET_ID}",
+        "tnt": str(_TENANT_ID),
+        "wid": str(_WIDGET_ID),
+        "kvr": 1,
+        "org": _ORIGIN,
+        "iat": 1,
+        "exp": 2,  # ancient
+    }
+    token = jose_jwt.encode(claims, _KEY_MATERIAL, algorithm="HS256")
+    # silence "unused import": ensure mint_widget_session_token is at least
+    # referenced so the helper can be reused by other tests in this module.
+    assert callable(mint_widget_session_token)
+    response = client.post(
+        "/api/v1/widget/chat",
+        headers={"Authorization": f"Bearer {token}", "Origin": _ORIGIN},
+        json={"message": "hi"},
+    )
+    assert response.status_code == 401
