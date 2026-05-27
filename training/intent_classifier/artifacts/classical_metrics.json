@@ -1,0 +1,86 @@
+{
+  "artifact_path": "training\\intent_classifier\\artifacts\\classical_intent_logreg.joblib",
+  "artifact_sha256": "9f153212badb6a85529ebf1cff22894134cc4d6b0eec473322d4f79230f0ee1a",
+  "classification_report": {
+    "accuracy": 0.9716666666666667,
+    "faq_rag": {
+      "f1-score": 0.9915966386554622,
+      "precision": 1.0,
+      "recall": 0.9833333333333333,
+      "support": 120.0
+    },
+    "human_escalate": {
+      "f1-score": 0.95,
+      "precision": 0.95,
+      "recall": 0.95,
+      "support": 120.0
+    },
+    "lead_capture": {
+      "f1-score": 0.9547325102880658,
+      "precision": 0.943089430894309,
+      "recall": 0.9666666666666667,
+      "support": 120.0
+    },
+    "macro avg": {
+      "f1-score": 0.9717623430383571,
+      "precision": 0.9719512195121951,
+      "recall": 0.9716666666666667,
+      "support": 600.0
+    },
+    "other_agent": {
+      "f1-score": 0.9666666666666667,
+      "precision": 0.9666666666666667,
+      "recall": 0.9666666666666667,
+      "support": 120.0
+    },
+    "spam": {
+      "f1-score": 0.99581589958159,
+      "precision": 1.0,
+      "recall": 0.9916666666666667,
+      "support": 120.0
+    },
+    "weighted avg": {
+      "f1-score": 0.971762343038357,
+      "precision": 0.9719512195121952,
+      "recall": 0.9716666666666667,
+      "support": 600.0
+    }
+  },
+  "dataset_path": "training\\intent_classifier\\data\\customer_support_intents_mapped.jsonl",
+  "dataset_sha256": "848697bc0d6f6a2a152a89a83dd00e5123dacdcbff86a6a449f84233e2af64ae",
+  "label_distribution": {
+    "faq_rag": 400,
+    "human_escalate": 400,
+    "lead_capture": 400,
+    "other_agent": 400,
+    "spam": 400
+  },
+  "labels": [
+    "faq_rag",
+    "lead_capture",
+    "human_escalate",
+    "spam",
+    "other_agent"
+  ],
+  "latency_ms_per_item_estimate": 0.01008883336908184,
+  "macro_f1": 0.9717623430383571,
+  "model_name": "tfidf_logistic_regression",
+  "notes": [
+    "Training data is mapped from public support-style datasets.",
+    "Deprecated bootstrap scaffold is retained under examples/bootstrap and is not used.",
+    "Artifact is not wired into modelserver serving in Phase 4A.",
+    "DL/ONNX and LLM zero-shot baselines are pending."
+  ],
+  "per_class_f1": {
+    "faq_rag": 0.9915966386554622,
+    "human_escalate": 0.95,
+    "lead_capture": 0.9547325102880658,
+    "other_agent": 0.9666666666666667,
+    "spam": 0.99581589958159
+  },
+  "phase": "4A_repair_classical_baseline",
+  "random_seed": 10,
+  "test_size": 600,
+  "test_size_fraction": 0.3,
+  "train_size": 1400
+}

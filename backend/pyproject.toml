@@ -24,6 +24,11 @@ dependencies = [
     "bcrypt<4.1",
     "redis[hiredis]",
     "minio",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-instrumentation-fastapi",
+    "opentelemetry-instrumentation-httpx",
 ]
 [dependency-groups]
 dev = [

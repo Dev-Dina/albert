@@ -1,0 +1,51 @@
+# Owner C visitor-intent label mapping for Phase 4A-repair.
+#
+# Primary source:
+#   bitext/Bitext-customer-support-llm-chatbot-training-dataset
+#   File: Bitext_Sample_Customer_Support_Training_Dataset_27K_responses-v11.csv
+#   Public Hugging Face dataset; customer-service intent detection.
+#
+# Spam supplement:
+#   UCI SMS Spam Collection
+#   Used only because the Bitext support dataset does not include a spam/junk
+#   class. Only rows labeled "spam" are mapped to Albert's spam label.
+#
+# Bootstrap scaffold:
+#   examples/bootstrap/bootstrap_intents.jsonl is retained only as deprecated
+#   scaffold data from the earlier Phase 4A pass. It is not used by the current
+#   training script.
+
+source_intent_to_albert_label:
+  faq_rag:
+    - check_cancellation_fee
+    - check_invoice
+    - check_payment_methods
+    - check_refund_policy
+    - delivery_options
+    - get_invoice
+    - track_refund
+  lead_capture:
+    - create_account
+    - newsletter_subscription
+    - place_order
+    - set_up_shipping_address
+  human_escalate:
+    - cancel_order
+    - change_order
+    - complaint
+    - delete_account
+    - payment_issue
+  other_agent:
+    - change_shipping_address
+    - edit_account
+    - review
+    - switch_account
+
+supplement_to_albert_label:
+  spam:
+    - uci_sms_spam_collection:spam
+
+sampling:
+  max_examples_per_albert_label: 400
+  random_seed: 42
+  dedupe_normalized_text: true

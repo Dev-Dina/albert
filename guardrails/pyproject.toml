@@ -5,6 +5,10 @@ description = "Albert guardrails service shell."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-instrumentation-fastapi",
     "uvicorn",
 ]
 
