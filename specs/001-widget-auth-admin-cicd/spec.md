@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "OWNER D — Widget Auth, Admin UX & CI/CD. Embeddable widget + /widget.js loader, signed per-widget token exchange, per-tenant origin allowlist (CSP frame-ancestors + CORS) plus server-side origin check, admin Streamlit config page (widgets, guardrail config, embed snippet), and four CI eval gates + smoke test with thresholds in eval_thresholds.yaml."
+**Input**: User description: "OWNER D — Widget Auth, Admin UX & CI/CD. Embeddable widget + /widget.js loader, signed per-widget token exchange, per-tenant origin allowlist (CSP frame-ancestors + CORS) plus server-side origin check, admin Streamlit config page (widgets, guardrail config, embed snippet), and five CI eval gates + smoke test with thresholds in eval_thresholds.yaml."
 
 ## Clarifications
 
@@ -72,7 +72,7 @@ A tenant admin opens the admin app, views their widgets, edits theme/greeting an
 
 ### User Story 4 - CI blocks merges that would silently degrade the agent (Priority: P2)
 
-On every push to a branch and every pull request, the CI pipeline runs lint, type-check, builds images, brings up the stack, and runs the agent-quality and safety eval gates. If any gate regresses below the thresholds committed in `eval_thresholds.yaml`, the check fails and the PR cannot be merged. A green build means: nothing in this change made the classifier, the tool-selection agent, RAG retrieval, redaction, or the cross-tenant defenses measurably worse, and the stack still boots from a fresh clone.
+On every push to a branch and every pull request, the CI pipeline runs lint, type-check, builds images, brings up the stack, and runs the five agent-quality and safety eval gates (classifier, agent tool-selection, RAG, cross-tenant red-team, redaction). If any gate regresses below the thresholds committed in `eval_thresholds.yaml`, the check fails and the PR cannot be merged. A green build means: nothing in this change made the classifier, the tool-selection agent, RAG retrieval, redaction, or the cross-tenant defenses measurably worse, and the stack still boots from a fresh clone.
 
 **Why this priority**: The other three stories make the agent visibly good once; CI is what keeps it good across four owners merging in parallel. It is P2 only because the gates can stand up after a thin slice of the widget + auth path exists to gate against.
 
@@ -80,7 +80,7 @@ On every push to a branch and every pull request, the CI pipeline runs lint, typ
 
 **Acceptance Scenarios**:
 
-1. **Given** a PR with no functional changes, **When** CI runs, **Then** all six checks (lint, type-check, image build, four eval gates, smoke test) execute and pass, and the run is reproducible on a fresh clone.
+1. **Given** a PR with no functional changes, **When** CI runs, **Then** all seven checks (lint, type-check, image build, smoke test, and the five eval gates) execute and pass, and the run is reproducible on a fresh clone.
 2. **Given** a PR that lowers classifier macro-F1 below the threshold in `eval_thresholds.yaml`, **When** CI runs, **Then** the classifier-eval gate fails and the PR is blocked from merging.
 3. **Given** a PR that introduces any change which lets a cross-tenant red-team prompt succeed, **When** CI runs, **Then** the injection/cross-tenant gate fails — every attempt in the red-team set must fail for the gate to pass.
 4. **Given** a PR that disables the secret-redaction rule, **When** CI runs, **Then** the redaction test fails because the planted fake key appears in output.
@@ -118,7 +118,7 @@ On every push to a branch and every pull request, the CI pipeline runs lint, typ
 
 - **FR-006**: On load, the widget MUST exchange the public `widget_id` (together with the embedding origin reported by the browser) for a short-lived, tenant-scoped session token issued and signed by the API.
 - **FR-007**: Every subsequent chat or related widget API call MUST carry the session token; requests without a valid token MUST be rejected with HTTP 401.
-- **FR-008**: The session token MUST be short-lived (assumed default: 15 minutes; final value set in plan) and MUST be re-obtainable by the widget without visitor friction when it expires.
+- **FR-008**: The session token MUST be short-lived (default: 15 minutes; tunable via centralized config, never hard-coded) and MUST be re-obtainable by the widget without visitor friction when it expires.
 - **FR-008a**: When a session token approaches expiry, the widget MUST silently re-exchange the public `widget_id` (with the same origin check) for a fresh session token using the same endpoint as the initial exchange — no separate refresh-token primitive is issued or stored in v1.
 - **FR-008b**: If a chat request returns HTTP 401 due to expiry, the widget MUST attempt a single silent re-exchange and retry the failed request before surfacing any visitor-facing error; a visitor-facing "session expired" state MUST appear only when re-exchange itself is refused (e.g., origin removed, key rotated, widget disabled, or rate-limit cap hit).
 - **FR-008c**: Silent re-exchange MUST itself be subject to the per-tenant and per-IP rate limits in FR-015a; a refused re-exchange MUST NOT trigger an unbounded retry loop in the widget.
@@ -179,7 +179,7 @@ On every push to a branch and every pull request, the CI pipeline runs lint, typ
 - **SC-003**: A widget loaded from a disallowed origin is blocked in three independent ways on every check: the browser shows a real CSP/frame-ancestors error in the console, the token-exchange call returns HTTP 403, and a direct (non-browser) call with a copied `widget_id` from that origin is also rejected.
 - **SC-004**: A request that includes a forged or stale session token is rejected with HTTP 401 in 100% of test cases, including when CORS would otherwise have permitted the caller's origin.
 - **SC-005**: A planted fake secret never appears in any agent response, log line, or stored trace under the redaction test set — leak rate is 0.
-- **SC-006**: Every push to a branch triggers a CI run whose pass/fail outcome on each of the six checks (lint, type-check, image build, four+ eval gates, smoke test) is visible on the PR within the team's agreed CI time budget, and a fresh clone reproduces the run.
+- **SC-006**: Every push to a branch triggers a CI run whose pass/fail outcome on each of the seven checks (lint, type-check, image build, smoke test, and the five eval gates) is visible on the PR within the team's agreed CI time budget, and a fresh clone reproduces the run.
 - **SC-007**: When an admin changes a widget's greeting or theme, the change is reflected to the next visitor's widget load with no code deploy and within one bundle cache cycle.
 - **SC-008**: When an admin removes an origin from the allowlist, no new session tokens can be minted for that origin and existing tokens stop being honored on the next request from that origin.
 - **SC-009**: At least one demonstrable scenario per high-priority story (US1 visitor chat on allowed host, US2 disallowed host + curl + body-`tenant_id` attacks all rejected) can be shown live in the Friday demo without ad-hoc code changes.

@@ -7,7 +7,7 @@ from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.vault_client import read_tenant_widget_signing_key
+from app.clients import vault_client
 from app.core.security import (
     WidgetSessionClaims,
     WidgetTokenError,
@@ -90,7 +90,13 @@ async def get_widget_session(
     Sets ``app.tenant_id`` on the request's DB session so all subsequent
     tenant-scoped queries are gated by RLS for the lifetime of the request.
     Returns 401 on any failure; NEVER leaks why (signature mismatch vs.
-    expiry vs. rotation).
+    expiry vs. rotation vs. origin re-check failure).
+
+    Origin re-check (T059a / SC-008): after the token verifies, the request's
+    Origin header is checked against the tenant's CURRENT
+    ``widget_allowed_origins``. This is the path that revokes a token when
+    the admin removes the origin from the allowlist mid-session, without
+    waiting for natural token expiry.
     """
     token = _read_bearer(request)
 
@@ -109,7 +115,7 @@ async def get_widget_session(
     if active is None or active.version != kvr_claim:
         raise _widget_credentials_exc
 
-    key_material = await read_tenant_widget_signing_key(tenant_id)
+    key_material = await vault_client.read_tenant_widget_signing_key(tenant_id)
     if key_material is None:
         raise _widget_credentials_exc
 
@@ -121,6 +127,21 @@ async def get_widget_session(
         )
     except WidgetTokenError as exc:
         raise _widget_credentials_exc from exc
+
+    # Origin re-check (T059a). The token's own ``org`` claim is informational;
+    # we re-evaluate against the live allowlist so an admin removing an
+    # origin invalidates outstanding tokens from that origin on the very next
+    # request (SC-008). Missing Origin header → 401 (uniform refusal).
+    origin = request.headers.get("origin")
+    if not origin:
+        raise _widget_credentials_exc
+    from app.repositories import allowed_origin_repo
+
+    origin_ok = await allowed_origin_repo.exists_for_tenant(
+        db, claims.tenant_id, origin
+    )
+    if not origin_ok:
+        raise _widget_credentials_exc
 
     async with tenant_context(db, claims.tenant_id):
         yield claims

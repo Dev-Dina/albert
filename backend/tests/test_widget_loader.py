@@ -95,7 +95,47 @@ def test_widget_js_loader_fails_closed_without_data_widget_id() -> None:
     assert "missing or invalid" in response.text
 
 
+def _wire_embed_deps(*, widget_status: str = "enabled", origins: list[str] | None = None) -> None:
+    import uuid as _uuid
+
+    from app.clients import vault_client  # noqa: F401
+    from app.db.session import get_db
+    from app.repositories import allowed_origin_repo, widget_repo
+
+    tenant_id = _uuid.uuid4()
+    widget_id = _uuid.uuid4()
+
+    class _FakeSession:
+        async def execute(self, *args, **kwargs):
+            class _R:
+                def scalar_one_or_none(self_inner):
+                    return None
+            return _R()
+
+    async def _fake_get_db():
+        yield _FakeSession()
+
+    async def _fake_get_by_public_id(session, public_widget_id):
+        return widget_repo.PublicWidgetLookup(
+            widget_id=widget_id, tenant_id=tenant_id, status=widget_status
+        )
+
+    async def _fake_list_by_tenant(session, t_id):
+        from app.db.models.widget_allowed_origin import WidgetAllowedOrigin
+
+        return [WidgetAllowedOrigin(tenant_id=t_id, origin=o) for o in (origins or [])]
+
+    app.dependency_overrides[get_db] = _fake_get_db
+    widget_repo.get_by_public_id = _fake_get_by_public_id  # type: ignore[assignment]
+    allowed_origin_repo.list_by_tenant = _fake_list_by_tenant  # type: ignore[assignment]
+
+
+def teardown_function() -> None:
+    app.dependency_overrides.clear()
+
+
 def test_embed_html_includes_bundle_and_stylesheet() -> None:
+    _wire_embed_deps(origins=["http://localhost:8080"])
     response = client.get(
         "/widget/embed.html", params={"widget_id": "Acm" + "Z" * 19}
     )
@@ -105,8 +145,23 @@ def test_embed_html_includes_bundle_and_stylesheet() -> None:
     body = response.text
     assert f"/widget/bundle-{_BUNDLE_SHA}.js" in body
     assert f"/widget/bundle-{_BUNDLE_SHA}.css" in body
-    # US1 placeholder CSP (US2 lands per-tenant frame-ancestors).
     assert "Content-Security-Policy" in response.headers
+
+
+def test_embed_html_returns_404_for_disabled_widget() -> None:
+    _wire_embed_deps(widget_status="disabled", origins=["http://localhost:8080"])
+    response = client.get(
+        "/widget/embed.html", params={"widget_id": "Acm" + "D" * 19}
+    )
+    assert response.status_code == 404
+
+
+def test_embed_html_returns_404_when_tenant_has_no_origins() -> None:
+    _wire_embed_deps(origins=[])
+    response = client.get(
+        "/widget/embed.html", params={"widget_id": "Acm" + "Z" * 19}
+    )
+    assert response.status_code == 404
 
 
 def test_bundle_js_served_with_immutable_cache() -> None:

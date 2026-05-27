@@ -1,4 +1,13 @@
-# Albert — evaluation thresholds
+# Albert — evaluation thresholds (canonical, repo root).
+#
+# This file is the canonical source for CI gate thresholds, read by
+# `evals/common/thresholds.py` (Owner D, spec 001-widget-auth-admin-cicd).
+#
+# A second file exists at `evals/eval_thresholds.yaml` with a flat-key
+# schema; it is read by Owner C's `evals/rag_eval.py`,
+# `evals/tool_selection_eval.py`, and the `.github/workflows/rag-eval.yml`
+# workflow. The two files coexist on purpose during the transition; T086
+# (Phase 6 CI rewrite) consolidates them — see tasks.md.
 #
 # DAY 1 PLACEHOLDERS. These numbers are intentionally loose starting points.
 # They MUST be tightened once real eval datasets and harnesses exist.
@@ -22,3 +31,11 @@ redaction:
 
 smoke:
   required_pass_rate: 1.00  # basic end-to-end must always pass
+
+ci:
+  # Wall-clock budget for the full CI run (lint → typecheck → image_build → smoke
+  # → 5 eval gates → summary). Backs SC-006's "team's agreed CI time budget"
+  # promise. Soft signal by default: T087 surfaces observed vs threshold in the
+  # PR summary; flip to a hard gate (fail the build on exceed) once we have a
+  # few weeks of real run-times. 600s ≈ 10 min, the team's stated target.
+  total_budget_seconds: 600
