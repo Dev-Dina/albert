@@ -1,0 +1,25 @@
+# Platform guardrail floor — authoritative across ALL tenants.
+#
+# Tenants may strengthen any setting via their WidgetGuardrailConfig but MUST
+# NOT weaken any value below this floor. Enforced by
+# backend/app/services/guardrail_floor.py at admin-write time
+# (PUT /api/v1/admin/guardrail-config). A weakening attempt returns HTTP 422
+# with {key_path, attempted_value, floor_value}.
+#
+# Owner: Owner D (handing off to Owner C when their guardrails service claims it).
+
+block_topics:
+  # Topics that must be blocked for every tenant. Tenants may ADD to this list,
+  # never remove.
+  - medical_advice
+  - legal_advice
+  - financial_advice
+
+pii_redaction:
+  # PII redaction is mandatory floor-wide; tenants cannot disable.
+  enabled: true
+
+injection_defenses:
+  # Prompt-injection defense level. Tenants may raise (strict > balanced > basic)
+  # but never lower than the floor.
+  level: balanced

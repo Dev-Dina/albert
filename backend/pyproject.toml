@@ -16,19 +16,23 @@ dependencies = [
     "pgvector",
     "jinja2",
     "pydantic[email]",
-    "redis[asyncio]",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "redis[hiredis]",
+    "minio",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
     "pytest-asyncio",
+    "aiosqlite",
     "ruff",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["tests"]
+testpaths = ["tests", "evals"]
 asyncio_mode = "auto"
 
 [tool.ruff]
