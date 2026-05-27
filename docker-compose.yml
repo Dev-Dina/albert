@@ -24,23 +24,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  admin:
-    build:
-      context: ./admin
-    env_file: .env
-    ports:
-      - "8501:8501"
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health').status==200 else 1)"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 15s
-    restart: unless-stopped
-
   modelserver:
     build:
       context: ./modelserver

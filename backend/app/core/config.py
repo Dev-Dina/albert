@@ -34,11 +34,10 @@ class Settings(BaseSettings):
     guardrails_url: str = "http://guardrails:8010"
     service_auth_token: SecretStr = SecretStr("dev-service-token")
 
-    widget_session_ttl_seconds: int = 900
-    widget_clock_skew_seconds: int = 60
-    widget_rate_limit_per_ip_per_min: int = 30
-    widget_rate_limit_per_tenant_per_min: int = 120
-    widget_loader_url: str = "http://localhost:8000/widget.js"
+    minio_endpoint: str = "minio:9000"
+    minio_access_key: SecretStr = SecretStr("minioadmin")
+    minio_secret_key: SecretStr = SecretStr("minioadmin")
+    minio_secure: bool = False
 
 
 settings = Settings()
