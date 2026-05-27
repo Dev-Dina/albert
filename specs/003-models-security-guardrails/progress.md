@@ -14,6 +14,7 @@ Central status tracker for Models, Security & Guardrails.
 | Phase 4B | Classical model served | PASS |
 | Phase 4C | Classifier eval gate runner | PASS |
 | Phase 4D | DL/ONNX baseline | PASS |
+| Phase 4D.5 | OpenTelemetry + Jaeger tracing | PASS |
 | Phase 4E | LLM zero-shot baseline | NEXT |
 | Phase 5 | Production model decision | PENDING |
 | Phase 6 | Guardrails + red-team suite | PENDING |
@@ -52,6 +53,19 @@ All classifier baselines use the same held-out split:
 - CI is not wired yet.
 - Credit-card redaction is specified but not yet implemented.
 - Endpoint migration to target names requires Owner B/D coordination.
+
+## Tracing
+
+- Tracing backend: OpenTelemetry + Jaeger.
+- Jaeger UI: `http://localhost:16686`.
+- Services traced: backend, modelserver, guardrails.
+- Propagation: W3C trace context plus existing `X-Request-ID`.
+- Safety policy: no raw user text, no prompts, no secrets, no Authorization
+  headers, no cookies, and no raw PII in custom span attributes.
+- Local verification: run `docker compose up --build`, exercise backend calls
+  that reach modelserver/guardrails, then open the Jaeger UI.
+- Vault note: local Jaeger needs no tracing secret. If an external OTLP backend
+  is used later, Owner A injects exporter credentials through env/settings.
 
 ## Next Action
 

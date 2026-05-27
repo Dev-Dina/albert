@@ -68,3 +68,26 @@ Owner B decisions for the Albert concierge backend.
 **Chosen**: Hybrid.
 
 **Reason**: The majority of real visitor messages (greetings, farewells, out-of-scope) are predictable and need no LLM. Routing these directly saves cost and latency for the common case. The agent handles only the messages that genuinely need knowledge retrieval or tool use — earning its slot by doing what a workflow cannot.
+
+---
+
+## ADR-006: Tracing Backend
+
+**Chosen backend**: OpenTelemetry + Jaeger for local/dev tracing.
+
+**Reason**: OpenTelemetry gives vendor-neutral instrumentation and W3C trace-context
+propagation across backend, modelserver, guardrails, and backend outbound HTTP calls.
+Jaeger all-in-one is lightweight for local demos and exposes the UI at
+`http://localhost:16686`.
+
+**Safety policy**:
+- Keep existing `X-Request-ID` correlation for logs and app-level debugging.
+- Propagate distributed traces with W3C `traceparent`.
+- Do not put raw user text, prompts, system prompts, Authorization headers,
+  cookies, service tokens, API keys, or raw PII/secrets in span attributes.
+- If user-provided text must be represented, use length, hash, category, or
+  redaction counts only.
+
+No tracing secrets are needed for local Jaeger. If Albert later exports traces
+to a hosted OTLP backend, Owner A should inject exporter credentials through
+env/settings rather than code.

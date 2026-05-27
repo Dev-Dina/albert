@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     guardrails_url: str = "http://guardrails:8010"
     service_auth_token: SecretStr = SecretStr("dev-service-token")
 
+    otel_enabled: bool = False
+    otel_service_name: str = "albert-backend"
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_environment: str = "local"
+    otel_traces_exporter: str = "otlp"
+
     # Widget auth (spec 001-widget-auth-admin-cicd). Restored after a prior
     # main-merge dropped them; still referenced by app.core.security and
     # app.services.widget_session_service.

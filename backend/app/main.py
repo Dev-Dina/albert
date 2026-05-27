@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.redaction import install_redaction_filter
 from app.core.request_context import RequestIdMiddleware
+from app.core.tracing import setup_tracing
 from app.lifespan import lifespan
 
 setup_logging(settings.log_level)
@@ -20,6 +21,7 @@ install_redaction_filter()
 
 app = FastAPI(title="Albert Backend", lifespan=lifespan)
 app.add_middleware(RequestIdMiddleware)
+setup_tracing(app)
 
 app.include_router(health_router)
 app.include_router(status_router)
