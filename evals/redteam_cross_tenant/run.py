@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -18,7 +19,6 @@ from app.main import app  # noqa: E402
 GATE_NAME = "redteam_cross_tenant"
 FIXTURE_DIR = ROOT / "evals" / "redteam_cross_tenant" / "fixtures"
 THRESHOLDS_PATH = ROOT / "eval_thresholds.yaml"
-RESULTS_PATH = ROOT / "artifacts" / "ci-gate-results.json"
 SERVICE_TOKEN = "redteam-eval-token"
 
 
@@ -80,9 +80,14 @@ def evaluate_case(client: TestClient, case: dict[str, Any]) -> tuple[bool, str]:
     )
 
 
-def append_result(status: str, observed: float | str, threshold: float | str) -> None:
-    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with RESULTS_PATH.open("a", encoding="utf-8") as handle:
+def append_result(
+    output_path: Path,
+    status: str,
+    observed: float | str,
+    threshold: float | str,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("a", encoding="utf-8") as handle:
         handle.write(
             json.dumps(
                 {
@@ -97,7 +102,14 @@ def append_result(status: str, observed: float | str, threshold: float | str) ->
         )
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Owner C red-team gate.")
+    parser.add_argument("--output", type=Path, help="Optional JSONL result path for CI.")
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = parse_args()
     try:
         threshold = load_required_pass_rate()
         cases = load_cases()
@@ -124,12 +136,14 @@ def main() -> int:
             f"GATE={GATE_NAME} STATUS={status} OBSERVED={pass_rate:.6f} "
             f"THRESHOLD={threshold:.6f}"
         )
-        append_result(status, round(pass_rate, 6), threshold)
+        if args.output:
+            append_result(args.output, status, round(pass_rate, 6), threshold)
         return 0 if status == "pass" else 1
     except Exception as exc:
         print(f"GATE={GATE_NAME} STATUS=error OBSERVED=NA THRESHOLD=NA")
         print(f"ERROR: {exc.__class__.__name__}", file=sys.stderr)
-        append_result("error", "NA", "NA")
+        if args.output:
+            append_result(args.output, "error", "NA", "NA")
         return 2
 
 

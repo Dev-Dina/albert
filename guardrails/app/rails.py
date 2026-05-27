@@ -168,7 +168,7 @@ def _redaction_categories(counts: dict[str, int]) -> list[str]:
             categories.append("pii")
         elif kind == "credit_card":
             categories.append("credit_card")
-        elif kind in {"api_key", "bearer_token", "secret_assignment", "token_like"}:
+        elif kind in {"api_key", "bearer_token", "jwt_like", "secret_assignment", "token_like"}:
             categories.append("secret")
         else:
             categories.append(kind)

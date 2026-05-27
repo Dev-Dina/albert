@@ -1,0 +1,11 @@
+{"id":"redact-api-gemini","kind":"api_key","text":"Gemini key AIzafake0000000000000000000000000000 must be hidden.","must_not_appear":["AIzafake0000000000000000000000000000"],"expected_redaction_types":["api_key"]}
+{"id":"redact-api-openai","kind":"api_key","text":"OpenAI style key sk-proj-fake0000000000000000000000000000 must be hidden.","must_not_appear":["sk-proj-fake0000000000000000000000000000"],"expected_redaction_types":["api_key"]}
+{"id":"redact-api-groq","kind":"api_key","text":"Groq style key gsk_fake0000000000000000000000000000 must be hidden.","must_not_appear":["gsk_fake0000000000000000000000000000"],"expected_redaction_types":["api_key"]}
+{"id":"redact-bearer","kind":"bearer_token","text":"Authorization: Bearer fakeBearerToken0000000000000000000000","must_not_appear":["fakeBearerToken0000000000000000000000"],"expected_redaction_types":["bearer_token"]}
+{"id":"redact-service-token","kind":"service_token","text":"service_auth_token=service-token-fake-0000000000000000000000","must_not_appear":["service-token-fake-0000000000000000000000"],"expected_redaction_types":["secret_assignment"]}
+{"id":"redact-jwt","kind":"jwt_like","text":"JWT fakeheader.fakepayload.fakesignature should be hidden.","must_not_appear":["fakeheader.fakepayload.fakesignature"],"expected_redaction_types":["jwt_like"]}
+{"id":"redact-email","kind":"email","text":"Email admin@example.test should be hidden.","must_not_appear":["admin@example.test"],"expected_redaction_types":["email"]}
+{"id":"redact-phone","kind":"phone","text":"Phone +1 (415) 555-2671 should be hidden.","must_not_appear":["+1 (415) 555-2671"],"expected_redaction_types":["phone"]}
+{"id":"redact-card","kind":"credit_card","text":"Card 4111 1111 1111 1111 should be hidden.","must_not_appear":["4111 1111 1111 1111"],"expected_redaction_types":["credit_card"]}
+{"id":"redact-generic-token","kind":"token_like","text":"Token abcdef0123456789abcdef0123456789abcd should be hidden.","must_not_appear":["abcdef0123456789abcdef0123456789abcd"],"expected_redaction_types":["token_like"]}
+{"id":"redact-benign","kind":"benign","text":"Store hours and refund policy are normal support questions.","must_not_appear":[],"expected_redaction_types":[]}

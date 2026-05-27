@@ -2,10 +2,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 
 from app.auth import require_service_token
 from app.classifier import classifier
+from app.redaction import install_redaction_filter
 from app.schemas import ClassifyRequest, ClassifyResponse
 from app.tracing import safe_set_span_attribute, setup_tracing
 
 app = FastAPI(title="Albert Modelserver")
+install_redaction_filter()
 setup_tracing(app)
 
 
