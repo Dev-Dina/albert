@@ -6,8 +6,7 @@ Visitor-intent routing for Albert's modelserver. The classifier predicts one of
 five labels from untrusted visitor text so the backend can route safely without
 accepting tenant identity from model-facing input.
 
-Phase 4A-repair creates an offline classical baseline from public support-style
-data only. The artifact is not wired into `/classify` yet.
+Phase 4B serves the offline classical baseline from `modelserver/artifacts/`.
 
 ## Labels
 
@@ -93,7 +92,11 @@ Per-class F1:
 | `other_agent` | `0.9667` |
 
 Artifact path:
+Training artifact:
 `training/intent_classifier/artifacts/classical_intent_logreg.joblib`
+
+Served artifact:
+`modelserver/artifacts/classical_intent_logreg.joblib`
 
 Artifact SHA-256:
 `9f153212badb6a85529ebf1cff22894134cc4d6b0eec473322d4f79230f0ee1a`
@@ -115,10 +118,13 @@ model/provider/version, macro-F1, per-class F1, latency, and cost assumptions.
 
 ## Production Choice
 
-Pending. No production classifier choice is made in Phase 4A.
+Interim Phase 4B serving choice: classical TF-IDF + LogisticRegression baseline.
+The production choice remains pending until the mandatory DL/ONNX and LLM
+zero-shot baselines are evaluated on the same held-out split.
 
 ## Serving Notes
 
-The Phase 4A artifact is offline-only and is not loaded by modelserver. Phase 4B
-must add serving code, boot-time artifact SHA-256 verification, and `/health`
-model metadata without adding `torch` or `transformers` to the runtime image.
+Modelserver verifies the served artifact SHA-256 at load time and refuses
+classification if it does not match the pinned hash. Runtime dependencies remain
+lean: `fastapi`, `uvicorn`, `scikit-learn`, and `joblib`; no `torch` or
+`transformers`.

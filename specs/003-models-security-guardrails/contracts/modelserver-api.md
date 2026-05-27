@@ -37,7 +37,10 @@ Added alongside `/predict` (same handler); `/predict` is **kept**, not renamed.
 { "label": "faq_rag | lead_capture | human_escalate | spam | other_agent",
   "confidence": 0.0,
   "model_version": "string",
-  "artifact_sha256": "string" }
+  "artifact_sha256": "string",
+  "threshold_applied": false,
+  "predicted_label": "faq_rag | lead_capture | human_escalate | spam | other_agent",
+  "predicted_confidence": 0.0 }
 ```
 
 ## Classifier behavior (WS4)

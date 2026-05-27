@@ -5,6 +5,8 @@ description = "Albert modelserver service shell."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
+    "joblib",
+    "scikit-learn",
     "uvicorn",
 ]
 

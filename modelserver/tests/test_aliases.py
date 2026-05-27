@@ -19,17 +19,22 @@ def test_classify_wrong_token() -> None:
 
 
 def test_classify_correct_token_matches_predict(service_token: str) -> None:
-    classify = client.post("/classify", headers=_auth(service_token))
-    predict = client.post("/predict", headers=_auth(service_token))
+    payload = {"text": "I need to file a complaint about payment issue"}
+    classify = client.post("/classify", headers=_auth(service_token), json=payload)
+    predict = client.post("/predict", headers=_auth(service_token), json=payload)
     assert classify.status_code == 200
     assert predict.status_code == 200
     assert classify.json() == predict.json()
 
 
 def test_predict_still_works(service_token: str) -> None:
-    response = client.post("/predict", headers=_auth(service_token))
+    response = client.post(
+        "/predict",
+        headers=_auth(service_token),
+        json={"text": "how can I check payment methods"},
+    )
     assert response.status_code == 200
-    assert response.json() == {"label": "unknown", "confidence": 0.0}
+    assert response.json()["label"] == "faq_rag"
 
 
 def test_health_public() -> None:
