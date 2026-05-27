@@ -189,3 +189,28 @@ The serving container must stay lean.
 system-prompt extraction, tenant override, tool-abuse, and secret-extraction
 patterns. Phase 7 remains responsible for deeper redaction hardening and broader
 leak-surface coverage.
+
+---
+
+## ADR-011: Redaction Hardening Gate
+
+**Decision**: use a separate `evals/redaction/run.py` gate for planted-value
+leak testing, while keeping attack probes in `evals/redteam_cross_tenant/run.py`.
+
+**Context**: redaction must be proven across logs, traces, responses, errors,
+eval output, and generated CI artifacts. The redaction threshold is already
+canonical in root `eval_thresholds.yaml` as `redaction.required_pass_rate = 1.00`.
+
+**Rationale**:
+
+- A separate gate keeps leak fixtures focused and easier to expand.
+- It cleanly distinguishes "attack blocked" from "sensitive value leaked".
+- Local runs should print to stdout by default so root `artifacts/` output is
+  not generated unless CI passes `--output`.
+- Model artifacts under `training/intent_classifier/artifacts/` and
+  `modelserver/artifacts/` are not generated CI output and must not be cleaned
+  up by redaction work.
+
+**Consequence**: Phase 7B implements the redaction runner, fixtures, and tests
+against the full leak-surface contract. Owner D can later wire the same command
+with `--output artifacts/ci-gate-results.json` in CI.

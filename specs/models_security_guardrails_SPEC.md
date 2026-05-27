@@ -193,8 +193,16 @@ The label set matches Owner B's router/agent consumption:
 - **Redact before logs, traces, memory, and error outputs.** Raw secrets and unredacted sensitive
   messages must never reach a log line, a trace span, stored conversation memory, exception
   response, traceback surface, or other error output.
-- Detectors (regex-first; see decision O-6): email, phone, credit-card, API keys / tokens /
-  secrets, and the agreed PII set.
+- Required detectors (regex-first; see decision O-6): fake API keys; Gemini/OpenAI/Groq-style API
+  keys; Bearer tokens; service auth tokens; JWT-like strings; emails; phone numbers;
+  credit-card-like strings; and generic long token-like strings.
+- Required leak surfaces: backend logs, guardrails logs, modelserver logs, exception tracebacks,
+  HTTP error responses where applicable, OpenTelemetry span attributes, access logs, guardrails
+  responses, eval runner output, and generated CI artifacts.
+- Access logs must be disabled, sanitized, or proven not to contain raw user text, raw prompts,
+  Authorization headers, cookies, API keys, service tokens, or raw PII/secrets.
+- If user content must be represented in logs/traces/artifacts, use length, hash, redaction
+  type/count, or high-level category only; never raw content.
 - Applied on the input-logging path and on output-to-user / output-persistence.
 - **Fail closed:** if a detector errors, redact rather than pass through.
 - Logs record only redaction **type/count**, never the raw value.
@@ -246,11 +254,19 @@ A red-team suite runs in CI and gates merges. Categories:
   or model output (must be ignored; tenant identity comes only from verified context).
 - **tool abuse** — attempts to misuse `rag_search` / `capture_lead` / `escalate` (e.g. write to or
   read from another tenant, unvalidated input).
-- **redaction leak** — secrets/PII surfacing in responses, logs, traces, or memory.
+- **redaction leak** — secrets/PII surfacing in responses, logs, traces, memory, errors, eval
+  runner output, or generated CI artifacts.
 
 Gate (against the root `eval_thresholds.yaml`): `redteam.required_pass_rate = 1.00` and
 `redaction.required_pass_rate = 1.00` — any failure makes CI red. Wiring into
 `.github/workflows/ci.yml` (protected) is coordinated with Owner D.
+
+Owner C uses a separate `evals/redaction/run.py` gate for planted-value leak
+coverage. Local eval runs print to stdout by default. CI may pass
+`--output artifacts/ci-gate-results.json` to create generated gate artifacts;
+root `artifacts/` output should not be committed. Model artifacts under
+`training/intent_classifier/artifacts/` and `modelserver/artifacts/` are not
+generated gate output and must not be deleted/ignored by redaction hardening.
 
 ---
 
@@ -288,7 +304,7 @@ Gate (against the root `eval_thresholds.yaml`): `redteam.required_pass_rate = 1.
 | Phase 4 | Endpoint alignment | `/predict`→`/classify`, `/check-input`/`/check-output`→`/guardrails/input`/`/guardrails/output`, with deprecated aliases during migration. Coordinate with Owner B (caller) + D (CI). Migration timing open. |
 | Phase 5 | Classifier baseline + model card | Offline classical sklearn (TF-IDF + LogReg/LinearSVC) plus required DL/ONNX and LLM zero-shot baselines; three-model comparison vs `classifier.macro_f1_min`; `MODEL_CARD.md` + artifact SHA-256 + boot hash check. |
 | Phase 6 | Guardrails + red-team tests | Real platform rails + red-team cases (§10) + CI gate against root `eval_thresholds.yaml`. Coordinate with Owner D for `ci.yml`. |
-| Phase 7 | Served-model hardening if needed | If the mandatory Phase 5 comparison selects DL/ONNX, harden the exported artifact and serving path without adding `torch`/`transformers` to runtime containers. Not a deferral path for the comparison itself. |
+| Phase 7 | Redaction hardening | Expand detector coverage and prove the full leak-surface contract with `evals/redaction/run.py`; no root artifacts by default, optional CI JSON with `--output`. |
 
 ---
 

@@ -19,7 +19,8 @@ Central status tracker for Models, Security & Guardrails.
 | Phase 4E | LLM zero-shot baseline | PASS |
 | Phase 5 | Production model decision | PASS |
 | Phase 6 | Guardrails + red-team suite | PASS |
-| Phase 7 | Redaction hardening / credit-card add-on | PENDING |
+| Phase 7A | Redaction hardening spec-readiness | PASS |
+| Phase 7B | Redaction hardening implementation | NEXT |
 | Phase 8 | CI handoff | PENDING |
 
 ## Key Artifacts
@@ -83,8 +84,9 @@ LLM zero-shot notes:
 ## Open Risks
 
 - CI is not wired yet.
-- Redaction hardening remains Phase 7, especially broader credit-card coverage
-  and exception/access-log leak handling.
+- Redaction hardening implementation remains Phase 7B, especially broader
+  provider key, JWT-like, credit-card, exception-traceback, OpenTelemetry, and
+  access-log leak handling.
 - Endpoint migration to target names requires Owner B/D coordination.
 
 ## Guardrails / Red-Team
@@ -102,6 +104,26 @@ LLM zero-shot notes:
 - Red-team fixture path: `evals/redteam_cross_tenant/fixtures/redteam_cases.jsonl`.
 - Red-team runner command: `uv run --project guardrails python -m evals.redteam_cross_tenant.run`.
 - Pass threshold: root `eval_thresholds.yaml` `redteam.required_pass_rate = 1.00`.
+
+## Redaction Hardening
+
+- Phase 7A spec-readiness: PASS.
+- Eval strategy: separate `evals/redaction/run.py` gate, not folded into
+  `redteam_cross_tenant`.
+- Pass threshold: root `eval_thresholds.yaml`
+  `redaction.required_pass_rate = 1.00`.
+- Required redaction types: fake API keys; Gemini/OpenAI/Groq-style API keys;
+  Bearer tokens; service auth tokens; JWT-like strings; emails; phones;
+  credit-card-like strings; and generic long token-like strings.
+- Required leak surfaces: backend logs, guardrails logs, modelserver logs,
+  exception tracebacks, HTTP error responses where applicable, OpenTelemetry
+  span attributes, access logs, guardrails responses, eval runner output, and
+  generated CI artifacts.
+- Generated artifact rule: root `artifacts/` is local/CI output and should not
+  be committed; eval runners print to stdout by default and write JSON only with
+  optional `--output`; `training/intent_classifier/artifacts/` and
+  `modelserver/artifacts/` remain model artifacts and must not be removed or
+  ignored by Phase 7 work.
 
 ## Tracing
 
@@ -137,4 +159,4 @@ LLM zero-shot notes:
 
 ## Next Action
 
-Phase 7: redaction hardening / credit-card add-on.
+Phase 7B: implement redaction hardening and the separate redaction eval gate.
