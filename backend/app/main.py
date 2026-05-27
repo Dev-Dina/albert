@@ -22,11 +22,8 @@ install_redaction_filter()
 
 app = FastAPI(title="Albert Backend", lifespan=lifespan)
 app.add_middleware(RequestIdMiddleware)
-<<<<<<< HEAD
 setup_tracing(app)
-=======
 app.add_middleware(WidgetCorsMiddleware)
->>>>>>> origin/main
 
 app.include_router(health_router)
 app.include_router(status_router)
