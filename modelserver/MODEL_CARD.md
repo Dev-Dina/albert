@@ -6,7 +6,8 @@ Visitor-intent routing for Albert's modelserver. The classifier predicts one of
 five labels from untrusted visitor text so the backend can route safely without
 accepting tenant identity from model-facing input.
 
-Phase 4B serves the offline classical baseline from `modelserver/artifacts/`.
+Production serving uses the offline classical baseline from
+`modelserver/artifacts/`.
 
 ## Labels
 
@@ -195,17 +196,33 @@ routing.
 
 ## Production Choice
 
-Interim Phase 4B serving choice: classical TF-IDF + LogisticRegression baseline.
-The production choice remains formally finalized in Phase 5. The completed
-three-way comparison strongly favors the supervised lean classifiers over LLM
-routing on both accuracy and latency.
+Phase 5 production choice: **Classical TF-IDF + LogisticRegression**.
+
+Rationale:
+
+- Strong macro-F1 (`0.9718`) and balanced per-class behavior.
+- Fastest measured inference latency (`0.0101 ms/item`).
+- Already served by modelserver with artifact SHA-256 verification.
+- Lowest serving complexity and operational risk: `scikit-learn` + `joblib`,
+  no `torch`, no `transformers`, no GPU, no network call, and no provider key.
+- Keeps the serving container lean and failure modes local.
+
+The DL/ONNX baseline has the highest measured macro-F1 (`0.9834`) but does not
+automatically win. It remains the challenger because promoting it would require
+serving-path hardening, dependency review, and artifact/runtime validation. It
+can be promoted later if those operational checks justify the extra complexity.
+
+The Gemini zero-shot baseline is rejected for production routing because it is
+slower, provider-dependent, cost-bearing, and much weaker on macro-F1. It also
+struggles with `other_agent`, which is a project-specific routing convention
+rather than a natural semantic category.
 
 ## Same-Test-Set Comparison
 
 | Baseline | Status | Macro-F1 | Test size | Latency | Cost | Artifact / output |
 |---|---|---:|---:|---:|---:|---|
-| Classical TF-IDF + LogisticRegression | Served interim | `0.9718` | `600` | `0.0101 ms/item` | `$0` | `training/intent_classifier/artifacts/classical_intent_logreg.joblib` |
-| Small DL sklearn MLP exported to ONNX | Evaluated, not selected | `0.9834` | `600` | `0.0419 ms/item` | `$0` | `training/intent_classifier/artifacts/dl_intent_mlp.onnx` |
+| Classical TF-IDF + LogisticRegression | **Production selected** | `0.9718` | `600` | `0.0101 ms/item` | `$0` | `training/intent_classifier/artifacts/classical_intent_logreg.joblib` |
+| Small DL sklearn MLP exported to ONNX | Challenger, not served | `0.9834` | `600` | `0.0419 ms/item` | `$0` | `training/intent_classifier/artifacts/dl_intent_mlp.onnx` |
 | Gemini zero-shot (`gemini-2.5-flash-lite`) | Evaluated, not selected | `0.5036` | `600` | `1107.26 ms/item` | Token usage captured; dollar cost not recorded | `training/intent_classifier/artifacts/llm_zero_shot_metrics.json` |
 
 ## Serving Notes

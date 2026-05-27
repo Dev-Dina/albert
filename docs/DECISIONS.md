@@ -132,3 +132,37 @@ convention, not a naturally obvious semantic intent category.
 **Decision impact**: this supports shipping a supervised lean classifier for
 visitor-intent routing, not LLM-per-message routing. The formal production model
 choice remains recorded in Phase 5.
+
+---
+
+## ADR-009: Production Intent Classifier Choice
+
+**Decision**: ship the Classical TF-IDF + LogisticRegression classifier as the
+production model for Owner C visitor-intent routing.
+
+**Context**: Phase 4 completed the mandatory same-test-set comparison:
+
+| Model | Macro-F1 | Latency | Serving status |
+|---|---:|---:|---|
+| Classical TF-IDF + LogisticRegression | `0.971762` | `0.0101 ms/item` | Already served |
+| DL/ONNX TF-IDF + MLPClassifier | `0.9834` | `0.0419 ms/item` | Challenger |
+| Gemini zero-shot | `0.503639` | `1107.26 ms/item` | Rejected for routing |
+
+**Alternatives considered**:
+
+- **DL/ONNX challenger**: highest macro-F1, but requires serving-path hardening,
+  dependency review, and ONNX runtime operational validation before promotion.
+- **Gemini zero-shot**: slower, provider-dependent, cost-bearing, and much worse
+  on macro-F1; especially weak on `other_agent`.
+
+**Rationale**:
+
+- Strong F1 with fastest latency.
+- Already wired into modelserver and protected by artifact SHA-256 verification.
+- Lowest operational risk: no network dependency, no provider key, no GPU, no
+  `torch`, and no `transformers`.
+- Keeps the serving container lean while satisfying the classifier gate.
+
+**Consequence**: the ONNX model remains the challenger and can be promoted later
+after serving hardening. Highest F1 did not automatically win; production choice
+balances quality, latency, simplicity, and runtime risk.

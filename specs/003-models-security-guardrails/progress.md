@@ -17,7 +17,7 @@ Central status tracker for Models, Security & Guardrails.
 | Phase 4D.5 | OpenTelemetry + Jaeger tracing | PASS |
 | Phase 4D.6 | Vault secret inventory + Jaeger readiness | PASS |
 | Phase 4E | LLM zero-shot baseline | PASS |
-| Phase 5 | Production model decision | PENDING |
+| Phase 5 | Production model decision | PASS |
 | Phase 6 | Guardrails + red-team suite | PENDING |
 | Phase 7 | Redaction hardening / credit-card add-on | PENDING |
 | Phase 8 | CI handoff | PENDING |
@@ -37,6 +37,24 @@ Central status tracker for Models, Security & Guardrails.
 | Model card | `modelserver/MODEL_CARD.md` |
 | Classifier eval runner | `evals/classifier/run.py` |
 | Secret inventory | `docs/SECRETS.md` |
+
+## Production Model Choice
+
+Phase 5 selected **Classical TF-IDF + LogisticRegression** for production
+serving.
+
+- Served artifact: `modelserver/artifacts/classical_intent_logreg.joblib`.
+- Training artifact: `training/intent_classifier/artifacts/classical_intent_logreg.joblib`.
+- Artifact SHA-256: `9f153212badb6a85529ebf1cff22894134cc4d6b0eec473322d4f79230f0ee1a`.
+- Model version: `classical-intent-logreg-v0.1.0`.
+- Challenger: DL/ONNX TF-IDF + MLPClassifier, which has the highest F1 but is
+  not yet served.
+- LLM routing rejected for production: slower, cost-bearing, provider-dependent,
+  and much weaker macro-F1.
+
+Highest F1 did not automatically win. The classical model was selected because
+it is already served, very fast, operationally simple, strong enough on F1, and
+keeps runtime risk low.
 
 ## Current Metrics
 
@@ -62,7 +80,6 @@ LLM zero-shot notes:
 
 ## Open Risks
 
-- Production choice is not final until Phase 5 records the decision.
 - Guardrails still need real rails and red-team suite if not already implemented.
 - CI is not wired yet.
 - Credit-card redaction is specified but not yet implemented.
@@ -102,5 +119,4 @@ LLM zero-shot notes:
 
 ## Next Action
 
-Phase 5: finalize production model decision using the completed classical,
-DL/ONNX, and LLM zero-shot comparison.
+Phase 6: guardrails + red-team suite.

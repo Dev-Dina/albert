@@ -61,12 +61,15 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 ### Workstream 5 — Guardrails sidecar and tenant/platform rails · **status: planned**
 - Platform rails mandatory and always-on: prompt injection, jailbreak, cross-tenant extraction, system-prompt-leak, PII/secret redaction.
 - Tenant rails configurable by `tenant_admin` (own tenant) but **cannot weaken** platform rails — a platform DENY overrides any tenant ALLOW; tenant rails may only narrow. Reuse `backend/app/services/guardrail_floor.py` + `guardrails/app/platform_floor.yaml`.
+- Guardrail request/response shape is pinned in [`contracts/guardrails-api.md`](./contracts/guardrails-api.md): request text plus optional server-injected context; response `allowed`, `action`, `categories`, `redacted_text`, `reason`.
+- Stable categories include `prompt_injection`, `jailbreak`, `cross_tenant`, `system_prompt_extraction`, `tenant_id_override`, `tool_abuse`, `pii`, `secret`, and `credit_card`.
 - *FR-C11.*
 
 ### Workstream 6 — Red-team + redaction eval gates · **status: planned**
 - Red-team categories (root SPEC §10): prompt injection, jailbreak, cross-tenant extraction, system-prompt extraction, fake `tenant_id` override, tool abuse, redaction leak.
 - Redaction-leak suite.
 - Pass-rate target **1.00** for `redteam` and `redaction`.
+- Fixture schemas, local commands, output format, and redaction leak expectations are pinned in [`contracts/redteam-eval.md`](./contracts/redteam-eval.md).
 - Harnesses conform to the existing [`001` CI-gate contract](../001-widget-auth-admin-cicd/contracts/ci-gate.contract.md); wiring into `ci.yml` coordinated with Owner D.
 - *FR-C12/FR-C13.*
 
