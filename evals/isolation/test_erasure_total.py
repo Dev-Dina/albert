@@ -124,7 +124,7 @@ async def _seed_tenant(db: AsyncSession) -> dict[str, uuid.UUID]:
         {"id": str(lead_id), "tid": str(TENANT_X)},
     )
 
-    # Widget config
+    # Widget config (from 0003 — widget_configs table)
     wc_id = uuid.uuid4()
     await db.execute(
         text(
@@ -132,6 +132,14 @@ async def _seed_tenant(db: AsyncSession) -> dict[str, uuid.UUID]:
             "(:id, :tid, 'wgt-test')"
         ),
         {"id": str(wc_id), "tid": str(TENANT_X)},
+    )
+
+    # Tenant guardrail config (from 0003) — unique per tenant
+    await db.execute(
+        text(
+            "INSERT INTO tenant_guardrail_configs (id, tenant_id) VALUES (:id, :tid)"
+        ),
+        {"id": str(uuid.uuid4()), "tid": str(TENANT_X)},
     )
 
     # Cost event
@@ -143,6 +151,53 @@ async def _seed_tenant(db: AsyncSession) -> dict[str, uuid.UUID]:
             "(:id, :tid, 'llm', 'test-model', 100, 50, 0.001)"
         ),
         {"id": str(ce_id), "tid": str(TENANT_X)},
+    )
+
+    # Widget tables (from 0004)
+    widget_id = uuid.uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO widgets (id, tenant_id, public_widget_id, name) VALUES "
+            "(:id, :tid, 'AbCdEfGhIjKlMnOpQrStuV', 'Test Widget')"
+        ),
+        {"id": str(widget_id), "tid": str(TENANT_X)},
+    )
+    await db.execute(
+        text(
+            "INSERT INTO widget_allowed_origins (id, tenant_id, origin) VALUES "
+            "(:id, :tid, 'example.com')"
+        ),
+        {"id": str(uuid.uuid4()), "tid": str(TENANT_X)},
+    )
+    await db.execute(
+        text(
+            "INSERT INTO widget_guardrail_configs (id, tenant_id) VALUES (:id, :tid)"
+        ),
+        {"id": str(uuid.uuid4()), "tid": str(TENANT_X)},
+    )
+    await db.execute(
+        text(
+            "INSERT INTO widget_signing_key_versions (id, tenant_id, version) VALUES "
+            "(:id, :tid, 1)"
+        ),
+        {"id": str(uuid.uuid4()), "tid": str(TENANT_X)},
+    )
+
+    # RAG chunk tables (from 0006) — no FK to tenants; explicit erasure required
+    parent_chunk_id = uuid.uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO parent_chunks (id, tenant_id, content_id, text, chunk_index) VALUES "
+            "(:id, :tid, :cid, 'parent chunk text', 0)"
+        ),
+        {"id": str(parent_chunk_id), "tid": str(TENANT_X), "cid": str(uuid.uuid4())},
+    )
+    await db.execute(
+        text(
+            "INSERT INTO child_chunks (id, tenant_id, parent_id, text, chunk_index) VALUES "
+            "(:id, :tid, :pid, 'child chunk text', 0)"
+        ),
+        {"id": str(uuid.uuid4()), "tid": str(TENANT_X), "pid": str(parent_chunk_id)},
     )
 
     await db.flush()
@@ -209,6 +264,12 @@ async def test_erasure_is_total(db: AsyncSession) -> None:
         "cms_pages",
         "widget_configs",
         "tenant_guardrail_configs",
+        "widgets",
+        "widget_allowed_origins",
+        "widget_guardrail_configs",
+        "widget_signing_key_versions",
+        "parent_chunks",
+        "child_chunks",
     ]:
         remaining = await _count(db, table, TENANT_X)
         assert remaining == 0, (

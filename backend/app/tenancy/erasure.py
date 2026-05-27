@@ -43,15 +43,24 @@ logger = logging.getLogger(__name__)
 # Tenant-owned tables in dependency order (children before parents where FK matters).
 # pgvector content_chunks is included here; the Postgres CASCADE on tenant_id also
 # handles it, but we delete explicitly so the erasure test can assert each table.
+# parent_chunks and child_chunks have no FK to tenants — CASCADE never fires for them,
+# so they MUST be listed here for explicit deletion.  child_chunks before parent_chunks
+# (FK: child_chunks.parent_id → parent_chunks.id CASCADE).
 _TENANT_TABLES = [
     "cost_events",
     "leads",
     "messages",
     "conversations",
+    "child_chunks",                  # FK to parent_chunks — must precede parent_chunks
+    "parent_chunks",                 # no FK to tenants; explicit delete required
     "content_chunks",
     "cms_pages",
     "widget_configs",
     "tenant_guardrail_configs",
+    "widgets",
+    "widget_allowed_origins",
+    "widget_guardrail_configs",
+    "widget_signing_key_versions",
 ]
 # Frozen copy used as an allowlist guard before any raw SQL table-name interpolation.
 _ALLOWED_TABLES: frozenset[str] = frozenset(_TENANT_TABLES)

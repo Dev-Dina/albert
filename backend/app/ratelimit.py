@@ -24,7 +24,7 @@ import time
 import uuid
 
 import redis.asyncio as aioredis
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 
 from app.core.config import settings
 
@@ -84,6 +84,52 @@ async def check_rate_limit(tenant_id: uuid.UUID) -> None:
         logger.warning(
             "rate_limit.redis_unavailable tenant_id=%s — failing open",
             tenant_id,
+            exc_info=True,
+        )
+
+
+async def check_auth_rate_limit(request: Request) -> None:
+    """Per-IP rate limit for public auth endpoints (login, register, widget-token).
+
+    Uses ``widget_rate_limit_per_ip_per_min`` from settings (default: 30 req/min).
+    Fails open if Redis is unavailable — logs a warning.
+    The IP is taken from the direct connection (request.client.host); in a
+    load-balanced deployment, configure the LB to pass X-Forwarded-For and
+    update this function to read that header from a trusted range.
+    """
+    ip = request.client.host if request.client else "unknown"
+    now = int(time.time())
+    window_start = now - (now % WINDOW_SECONDS)
+    key = f"rl_auth:{ip}:{window_start}"
+    limit = settings.widget_rate_limit_per_ip_per_min
+
+    try:
+        client = _redis_client()
+        async with client as r:
+            pipe = r.pipeline()
+            pipe.incr(key)
+            pipe.expire(key, WINDOW_SECONDS * 2)
+            results = await pipe.execute()
+            count = results[0]
+            if count > limit:
+                retry_after = WINDOW_SECONDS - (now % WINDOW_SECONDS)
+                logger.warning(
+                    "rate_limit.auth_exceeded ip=%s count=%d window=%d",
+                    ip,
+                    count,
+                    window_start,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many auth attempts. Please retry later.",
+                    headers={"Retry-After": str(retry_after)},
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.warning(
+            "rate_limit.auth_redis_unavailable ip=%s — failing open",
+            ip,
             exc_info=True,
         )
 

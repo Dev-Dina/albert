@@ -35,7 +35,7 @@ so the comparison returns no rows either way.
 with no context set returns zero rows. This is the safe default: missing context = no data,
 not all data.
 
-Migration: `backend/alembic/versions/0002_tenant_owned_tables_rls.py`
+Migration: `backend/alembic/versions/0003_tenant_owned_tables_rls.py`
 Tables covered: `cms_pages`, `content_chunks`, `conversations`, `messages`, `leads`,
 `widget_configs`, `tenant_guardrail_configs`, `cost_events`.
 
