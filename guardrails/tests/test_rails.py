@@ -108,3 +108,36 @@ def test_redacts_fake_secret_without_raw_value_in_response_or_logs(
     assert body["action"] == "redact"
     assert "secret" in body["categories"]
     assert "pii" in body["categories"]
+
+
+def test_redacts_required_sensitive_value_types(service_token: str) -> None:
+    cases = [
+        ("AIzaFake0000000000000000000000000000", "secret"),
+        ("sk-proj-fake0000000000000000000000000000", "secret"),
+        ("gsk_fake0000000000000000000000000000", "secret"),
+        ("Authorization: Bearer fakeBearerToken0000000000000000000000", "secret"),
+        ("service_auth_token=service-token-fake-0000000000000000000000", "secret"),
+        ("fakeheader.fakepayload.fakesignature", "secret"),
+        ("admin@example.test", "pii"),
+        ("+1 (415) 555-2671", "pii"),
+        ("4111 1111 1111 1111", "credit_card"),
+        ("abcdef0123456789abcdef0123456789abcd", "secret"),
+    ]
+    for raw, category in cases:
+        response = client.post(
+            "/guardrails/output",
+            headers=_auth(service_token),
+            json={"text": f"Please redact {raw}"},
+        )
+        assert response.status_code == 200
+        assert raw not in response.text
+        body = response.json()
+        assert body["action"] == "redact"
+        assert category in body["categories"]
+
+
+def test_benign_text_not_over_redacted(service_token: str) -> None:
+    body = _post("What are your store hours and refund policy?", service_token)
+    assert body["allowed"] is True
+    assert body["action"] == "allow"
+    assert body["redaction_summary"] is None

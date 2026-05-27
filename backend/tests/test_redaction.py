@@ -27,6 +27,7 @@ def test_redacts_token_like() -> None:
     result = redact(f"the value is {secret} ok")
     assert secret not in result.text
     assert result.counts.get("token_like", 0) >= 1
+    assert "[REDACTED_TOKEN]" in result.text
 
 
 def test_redacts_api_key_assignment() -> None:
@@ -40,20 +41,56 @@ def test_redacts_password_token_secret_assignments() -> None:
         result = redact(raw)
         value = raw.split("=", 1)[1]
         assert value not in result.text
-        assert "[REDACTED:secret_assignment]" in result.text
+        assert "[REDACTED_TOKEN]" in result.text
 
 
 def test_redacts_bearer_token() -> None:
     result = redact("Authorization: Bearer abc123def456ghi789")
     assert "abc123def456ghi789" not in result.text
     assert result.counts.get("bearer_token", 0) >= 1
+    assert "[REDACTED_TOKEN]" in result.text
+
+
+def test_redacts_provider_api_keys() -> None:
+    keys = [
+        "AIzaFake0000000000000000000000000000",
+        "sk-proj-fake0000000000000000000000000000",
+        "gsk_fake0000000000000000000000000000",
+    ]
+    for key in keys:
+        result = redact(f"key {key}")
+        assert key not in result.text
+        assert result.counts.get("api_key", 0) >= 1
+        assert "[REDACTED_API_KEY]" in result.text
+
+
+def test_redacts_jwt_like_string() -> None:
+    jwt = "fakeheader.fakepayload.fakesignature"
+    result = redact(f"jwt {jwt}")
+    assert jwt not in result.text
+    assert result.counts.get("jwt_like", 0) >= 1
+
+
+def test_redacts_credit_card_like_string() -> None:
+    card = "4111 1111 1111 1111"
+    result = redact(f"card {card}")
+    assert card not in result.text
+    assert result.counts.get("credit_card", 0) >= 1
+    assert "[REDACTED_CREDIT_CARD]" in result.text
+
+
+def test_benign_text_not_over_redacted() -> None:
+    text = "What are your store hours and refund policy?"
+    result = redact(text)
+    assert result.text == text
+    assert result.total == 0
 
 
 def test_fake_api_key_not_leaked_raw() -> None:
     fake = "sk-FAKE1234567890abcdefGHIJKL"
     result = redact(f"here is the key {fake} use it")
     assert fake not in result.text
-    assert "[REDACTED:" in result.text
+    assert "[REDACTED_API_KEY]" in result.text
 
 
 def test_counts_present_but_raw_absent() -> None:
@@ -95,7 +132,7 @@ def test_filter_redacts_record_and_clears_args() -> None:
     assert f.filter(record) is True
     rendered = record.getMessage()
     assert "supersecretvalue123456" not in rendered
-    assert "[REDACTED:" in rendered
+    assert "[REDACTED_TOKEN]" in rendered
 
 
 def test_install_redaction_filter_redacts_via_caplog(
@@ -107,4 +144,4 @@ def test_install_redaction_filter_redacts_via_caplog(
         logger.info("password=supersecretvalue123 contact a@b.com")
     assert "supersecretvalue123" not in caplog.text
     assert "a@b.com" not in caplog.text
-    assert "[REDACTED:" in caplog.text
+    assert "[REDACTED_TOKEN]" in caplog.text

@@ -2,10 +2,12 @@ from fastapi import Depends, FastAPI, Request
 
 from app.auth import require_service_token
 from app.rails import evaluate_input, evaluate_output
+from app.redaction import install_redaction_filter
 from app.schemas import GuardrailRequest, GuardrailResponse
 from app.tracing import safe_set_span_attribute, setup_tracing
 
 app = FastAPI(title="Albert Guardrails")
+install_redaction_filter()
 setup_tracing(app)
 
 
