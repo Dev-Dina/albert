@@ -6,8 +6,14 @@ on:
   pull_request:
 
 jobs:
+  backend-lint:
+    uses: ./.github/workflows/backend-lint.yml
+
+  rag-eval:
+    uses: ./.github/workflows/rag-eval.yml
+
   # -------------------------------------------------------------------------
-  # Job 1: fast unit tests — no database required
+  # Job 3: fast unit tests — no database required
   # -------------------------------------------------------------------------
   unit-tests:
     name: Unit Tests
@@ -34,7 +40,7 @@ jobs:
           # No DATABASE_URL — unit tests mock the DB via dependency overrides.
 
   # -------------------------------------------------------------------------
-  # Job 2: isolation evals — gate; requires live Postgres with migrations
+  # Job 4: isolation evals — gate; requires live Postgres with migrations
   # -------------------------------------------------------------------------
   isolation-evals:
     name: Isolation Evals (Gate)

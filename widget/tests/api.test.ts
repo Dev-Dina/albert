@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exchangeSession, sendChat, HttpError } from "../src/api";
-import { setSession, clearSession } from "../src/session";
+import { setSession, clearSession, getSessionToken } from "../src/session";
 
 declare const global: { fetch: unknown; window: Window };
 
@@ -82,5 +82,40 @@ describe("sendChat", () => {
     const response = await sendChat({ message: "hi" });
     expect(response.message).toBe("ok");
     expect(callCount).toBe(3); // chat 401 -> session -> chat retry
+  });
+
+  // T042a / FR-008c: a refused re-exchange MUST NOT trigger an unbounded
+  // retry loop. The widget surfaces a "session expired" state instead.
+  it("on 401 → 429 on re-exchange: no chat retry, error surfaced, session cleared (FR-008c)", async () => {
+    setSession("first-token", 900);
+    let chatCalls = 0;
+    let sessionCalls = 0;
+    global.fetch = vi.fn(async (url: string) => {
+      if (url === "/api/v1/widget/chat") {
+        chatCalls += 1;
+        return new Response("unauth", { status: 401 });
+      }
+      if (url === "/api/v1/widget/session") {
+        sessionCalls += 1;
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    let caught: unknown;
+    try {
+      await sendChat({ message: "hi" });
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).toBeInstanceOf(HttpError);
+    expect((caught as HttpError).status).toBe(401);
+    expect(chatCalls).toBe(1); // No retried chat request after refused re-exchange.
+    expect(sessionCalls).toBe(1); // Exactly one re-exchange attempt — no loop.
+    expect(getSessionToken()).toBeNull(); // Surfaces "session expired".
   });
 });

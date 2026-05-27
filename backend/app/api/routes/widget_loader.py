@@ -1,7 +1,10 @@
-"""Widget loader + iframe page + bundle (US1 baseline).
+"""Widget loader + iframe page + bundle.
 
-US2 layers in: per-tenant `Content-Security-Policy: frame-ancestors`,
-`X-Frame-Options`, and 404 for disabled/missing widgets at the embed page.
+US2-hardened embed page: emits per-tenant
+``Content-Security-Policy: frame-ancestors <allowlist>`` plus a legacy
+``X-Frame-Options`` derived from the tenant's allowlist (FR-012). A widget
+that is missing OR disabled OR whose tenant has no allowed origins returns 404
+(no body leakage), matching the uniform-failure stance of the session route.
 """
 
 from __future__ import annotations
@@ -9,22 +12,46 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_db
+from app.repositories import allowed_origin_repo, widget_repo
 
 router = APIRouter(tags=["widget-loader"])
 
 _DIST_DIR = Path(__file__).resolve().parents[4] / "widget" / "dist"
-_PLACEHOLDER_CSP = (
+_CSP_BASE = (
     "default-src 'none'; "
     "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
     "connect-src 'self'; "
     "img-src 'self' data:; "
-    "frame-ancestors 'self'; "
     "base-uri 'none'; "
-    "form-action 'none'"
+    "form-action 'none'; "
 )
+
+
+def _build_csp(frame_ancestors: list[str]) -> str:
+    """Build a CSP whose ``frame-ancestors`` directive is derived per-tenant.
+
+    ``frame-ancestors`` is the ONLY effective control against iframe-in-iframe
+    wrapping; the surrounding directives are constant across tenants.
+    """
+    ancestors = " ".join(frame_ancestors) if frame_ancestors else "'none'"
+    return _CSP_BASE + f"frame-ancestors {ancestors}"
+
+
+def _build_x_frame_options(frame_ancestors: list[str]) -> str:
+    """Legacy header for older browsers.
+
+    XFO can only express SAMEORIGIN or DENY (one origin max); with multiple
+    allowed origins the modern CSP directive does the real work. We pick the
+    safest representable answer here: DENY when no allowlist exists, otherwise
+    SAMEORIGIN as a hint for ancient browsers.
+    """
+    return "SAMEORIGIN" if frame_ancestors else "DENY"
 
 
 def _read_bundle_manifest() -> dict[str, str] | None:
@@ -56,12 +83,14 @@ async def get_widget_loader() -> Response:
 @router.get("/widget/embed.html", response_class=HTMLResponse)
 async def get_widget_embed(
     widget_id: str = Query(..., pattern=r"^[A-Za-z0-9]{22}$"),
+    db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Serve the iframe HTML that bootstraps the React bundle.
 
-    US1 baseline: placeholder CSP + 200 when manifest exists. US2 (T055) emits
-    per-tenant `frame-ancestors` derived from the tenant's allowlist and 404
-    when the resolved widget is disabled or missing.
+    Resolves the tenant from the public widget_id and emits CSP
+    ``frame-ancestors`` from the tenant's allowlist. Returns 404 for any
+    failure (missing widget, disabled widget, no allowed origins) without
+    leaking which case applied.
     """
     manifest = _read_bundle_manifest()
     if manifest is None:
@@ -69,6 +98,15 @@ async def get_widget_embed(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="widget bundle not built",
         )
+
+    lookup = await widget_repo.get_by_public_id(db, widget_id)
+    if lookup is None or lookup.status != "enabled":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    origins_rows = await allowed_origin_repo.list_by_tenant(db, lookup.tenant_id)
+    frame_ancestors = [row.origin for row in origins_rows]
+    if not frame_ancestors:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
     bundle_filename = manifest.get("filename", "")
     css_filename = manifest.get("css")
     css_link = (
@@ -88,8 +126,8 @@ async def get_widget_embed(
         content=html,
         headers={
             "Cache-Control": "no-store",
-            "Content-Security-Policy": _PLACEHOLDER_CSP,
-            "X-Frame-Options": "SAMEORIGIN",
+            "Content-Security-Policy": _build_csp(frame_ancestors),
+            "X-Frame-Options": _build_x_frame_options(frame_ancestors),
         },
     )
 

@@ -27,9 +27,9 @@ def test_wrong_token(path: str) -> None:
 
 @pytest.mark.parametrize("path", PROTECTED)
 def test_correct_token(path: str, service_token: str) -> None:
-    response = client.post(path, headers={"Authorization": f"Bearer {service_token}"})
+    response = client.post(path, headers={"Authorization": f"Bearer {service_token}"}, json={"text": "hello"})
     assert response.status_code == 200
-    assert response.json() == {"allowed": True, "reason": "phase_1_placeholder"}
+    assert response.json()["allowed"] is True
 
 
 @pytest.mark.parametrize("path", PROTECTED)

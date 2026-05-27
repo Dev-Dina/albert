@@ -1,0 +1,103 @@
+{
+  "classification_report": {
+    "accuracy": 0.62,
+    "faq_rag": {
+      "f1-score": 0.5263157894736842,
+      "precision": 0.35714285714285715,
+      "recall": 1.0,
+      "support": 10.0
+    },
+    "human_escalate": {
+      "f1-score": 0.7777777777777778,
+      "precision": 0.875,
+      "recall": 0.7,
+      "support": 10.0
+    },
+    "lead_capture": {
+      "f1-score": 0.6666666666666666,
+      "precision": 1.0,
+      "recall": 0.5,
+      "support": 10.0
+    },
+    "macro avg": {
+      "f1-score": 0.583625730994152,
+      "precision": 0.6464285714285715,
+      "recall": 0.62,
+      "support": 50.0
+    },
+    "other_agent": {
+      "f1-score": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "support": 10.0
+    },
+    "spam": {
+      "f1-score": 0.9473684210526315,
+      "precision": 1.0,
+      "recall": 0.9,
+      "support": 10.0
+    },
+    "weighted avg": {
+      "f1-score": 0.583625730994152,
+      "precision": 0.6464285714285714,
+      "recall": 0.62,
+      "support": 50.0
+    }
+  },
+  "cost_estimate_usd": null,
+  "cost_note": "Set --input-price-per-1m and --output-price-per-1m to record a dollar estimate; API key is never stored.",
+  "dataset_path": "training\\intent_classifier\\data\\customer_support_intents_mapped.jsonl",
+  "evaluated_count": 50,
+  "evaluated_label_distribution": {
+    "faq_rag": 10,
+    "human_escalate": 10,
+    "lead_capture": 10,
+    "other_agent": 10,
+    "spam": 10
+  },
+  "failed_count": 0,
+  "is_partial": true,
+  "labels": [
+    "faq_rag",
+    "lead_capture",
+    "human_escalate",
+    "spam",
+    "other_agent"
+  ],
+  "latency_ms_per_item_estimate": 803.2996039983118,
+  "limit": null,
+  "macro_f1": 0.583625730994152,
+  "model_name": "gemini-2.5-flash-lite",
+  "notes": [
+    "Gemini zero-shot baseline; no fine-tuning.",
+    "Reads GEMINI_API_KEY only from environment.",
+    "Predictions omit raw message text and store text length/hash only.",
+    "Partial runs are dry-run evidence only and must not update the model card.",
+    "Owner A/Vault can inject GEMINI_API_KEY through env/settings later.",
+    "Production model choice remains pending Phase 5."
+  ],
+  "per_class_f1": {
+    "faq_rag": 0.5263157894736842,
+    "human_escalate": 0.7777777777777778,
+    "lead_capture": 0.6666666666666666,
+    "other_agent": 0.0,
+    "spam": 0.9473684210526315
+  },
+  "phase": "4E_llm_zero_shot_baseline",
+  "predicted_label_distribution": {
+    "faq_rag": 28,
+    "human_escalate": 8,
+    "lead_capture": 5,
+    "other_agent": 0,
+    "spam": 9
+  },
+  "prediction_path": "training\\intent_classifier\\artifacts\\llm_zero_shot_predictions.jsonl",
+  "prompt_version": "intent-zero-shot-v2-balanced-labels",
+  "sample_per_class": 10,
+  "split_path": "training\\intent_classifier\\artifacts\\classical_split.json",
+  "split_source": "reused exact test_ids from classical_split.json",
+  "token_usage": {
+    "candidate_tokens": 640,
+    "prompt_tokens": 16510
+  }
+}

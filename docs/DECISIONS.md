@@ -68,3 +68,124 @@ Owner B decisions for the Albert concierge backend.
 **Chosen**: Hybrid.
 
 **Reason**: The majority of real visitor messages (greetings, farewells, out-of-scope) are predictable and need no LLM. Routing these directly saves cost and latency for the common case. The agent handles only the messages that genuinely need knowledge retrieval or tool use — earning its slot by doing what a workflow cannot.
+
+---
+
+## ADR-006: Tracing Backend
+
+**Chosen backend**: OpenTelemetry + Jaeger for local/dev tracing.
+
+**Reason**: OpenTelemetry gives vendor-neutral instrumentation and W3C trace-context
+propagation across backend, modelserver, guardrails, and backend outbound HTTP calls.
+Jaeger all-in-one is lightweight for local demos and exposes the UI at
+`http://localhost:16686`.
+
+**Safety policy**:
+- Keep existing `X-Request-ID` correlation for logs and app-level debugging.
+- Propagate distributed traces with W3C `traceparent`.
+- Do not put raw user text, prompts, system prompts, Authorization headers,
+  cookies, service tokens, API keys, or raw PII/secrets in span attributes.
+- If user-provided text must be represented, use length, hash, category, or
+  redaction counts only.
+
+No tracing secrets are needed for local Jaeger. If Albert later exports traces
+to a hosted OTLP backend, Owner A should inject exporter credentials through
+env/settings rather than code.
+
+---
+
+## ADR-007: LLM Baseline Provider Fallback
+
+**Primary provider**: Gemini for the mandatory zero-shot intent-classifier
+baseline.
+
+**Fallback provider**: Groq, only as a separate run if Gemini is unavailable.
+
+**Rule**: Do not mix Gemini and Groq predictions in one final comparison metrics
+file. Each run must record provider and model. If a mixed exploratory file is
+ever produced, mark it as mixed and exclude it from Phase 5 production-model
+decision evidence.
+
+**Secret handling**: `GEMINI_API_KEY` and optional `GROQ_API_KEY` come from
+env/settings, with Owner A/Vault injection expected outside local dev. Keys are
+never committed, logged, traced, or written to metrics/model cards.
+
+---
+
+## ADR-008: LLM Zero-Shot Routing Baseline Result
+
+**Run**: Gemini `gemini-2.5-flash-lite`, prompt
+`intent-zero-shot-v2-balanced-labels`, same 600-item held-out split as the
+classical and DL/ONNX baselines.
+
+| Baseline | Macro-F1 | Latency |
+|---|---:|---:|
+| Classical TF-IDF + LogisticRegression | `0.971762` | `0.0101 ms/item` |
+| DL/ONNX TF-IDF + MLPClassifier | `0.9834` | `0.0419 ms/item` |
+| Gemini zero-shot | `0.503639` | `1107.26 ms/item` |
+
+The LLM baseline performs well on `spam` (`0.9873` F1) but poorly on
+`other_agent` (`0.0325` F1), often mapping project-specific routing fallback
+cases to `faq_rag`. This is expected: `other_agent` is an Albert routing
+convention, not a naturally obvious semantic intent category.
+
+**Decision impact**: this supports shipping a supervised lean classifier for
+visitor-intent routing, not LLM-per-message routing. The formal production model
+choice remains recorded in Phase 5.
+
+---
+
+## ADR-009: Production Intent Classifier Choice
+
+**Decision**: ship the Classical TF-IDF + LogisticRegression classifier as the
+production model for Owner C visitor-intent routing.
+
+**Context**: Phase 4 completed the mandatory same-test-set comparison:
+
+| Model | Macro-F1 | Latency | Serving status |
+|---|---:|---:|---|
+| Classical TF-IDF + LogisticRegression | `0.971762` | `0.0101 ms/item` | Already served |
+| DL/ONNX TF-IDF + MLPClassifier | `0.9834` | `0.0419 ms/item` | Challenger |
+| Gemini zero-shot | `0.503639` | `1107.26 ms/item` | Rejected for routing |
+
+**Alternatives considered**:
+
+- **DL/ONNX challenger**: highest macro-F1, but requires serving-path hardening,
+  dependency review, and ONNX runtime operational validation before promotion.
+- **Gemini zero-shot**: slower, provider-dependent, cost-bearing, and much worse
+  on macro-F1; especially weak on `other_agent`.
+
+**Rationale**:
+
+- Strong F1 with fastest latency.
+- Already wired into modelserver and protected by artifact SHA-256 verification.
+- Lowest operational risk: no network dependency, no provider key, no GPU, no
+  `torch`, and no `transformers`.
+- Keeps the serving container lean while satisfying the classifier gate.
+
+**Consequence**: the ONNX model remains the challenger and can be promoted later
+after serving hardening. Highest F1 did not automatically win; production choice
+balances quality, latency, simplicity, and runtime risk.
+
+---
+
+## ADR-010: Guardrails Engine
+
+**Decision**: ship deterministic rules-first platform guardrails for Phase 6.
+
+**Context**: The project needs always-on platform rails, tenant rails that cannot
+weaken platform protections, and red-team gates with a 1.00 pass-rate threshold.
+The serving container must stay lean.
+
+**Rationale**:
+
+- Deterministic rules are inspectable, cheap, and easy to test locally.
+- They avoid adding NeMo, transformers, or another heavy runtime dependency.
+- They make red-team failures concrete: a probe either triggers the expected
+  category/action or it does not.
+- They keep platform DENY precedence simple and enforceable.
+
+**Consequence**: Phase 6 blocks common injection, jailbreak, cross-tenant,
+system-prompt extraction, tenant override, tool-abuse, and secret-extraction
+patterns. Phase 7 remains responsible for deeper redaction hardening and broader
+leak-surface coverage.
