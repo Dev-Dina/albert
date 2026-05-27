@@ -20,7 +20,7 @@ Deliver the Model Safety & Guardrails slice (Dina — Owner C) that lets Albert 
 
 ## 2. Scope
 
-In scope (Dina — Owner C): `modelserver/`, `guardrails/`, the backend `inference_client`, backend redaction/request-context utilities, Owner C evals (`classifier`, `redteam_cross_tenant`, `redaction`), and the Owner C portions of `eval_thresholds.yaml`.
+In scope (Dina — Owner C): `modelserver/`, `guardrails/`, the backend `inference_client`, backend redaction/request-context utilities, Owner C evals (`classifier`, `redteam_cross_tenant`, `redaction`), and the Owner C portions of the canonical root [`eval_thresholds.yaml`](../../eval_thresholds.yaml).
 
 Out of scope: tenant DB schema / RLS plumbing (Owner A), agent/router and tool implementations (Owner B), admin UI and the CI workflow file wiring (Owner D), and any endpoint **rename/removal** (only additive aliases — see workstream 3).
 
@@ -52,7 +52,8 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 - Labels: `faq_rag`, `lead_capture`, `human_escalate`, `spam`, `other_agent`.
 - Dataset selection with recorded source + SHA-256.
 - Offline training: TF-IDF + LogisticRegression / LinearSVC → `.joblib` artifact (serving stays lean).
-- `modelserver/MODEL_CARD.md`: task, dataset source + SHA-256, metrics, served artifact SHA-256.
+- Required comparison baselines before serving choice: classical ML (TF-IDF + LogisticRegression or LinearSVC), DL exported to ONNX and served via onnxruntime, and an offline LLM zero-shot baseline.
+- `modelserver/MODEL_CARD.md`: task, dataset source + SHA-256, per-baseline macro-F1/latency/cost/artifact-size/dependency impact, served-model rationale, served artifact SHA-256.
 - Artifact SHA-256 verification at boot (mismatch ⇒ refuse to serve); `/health` reports `model_version`, `artifact_sha256`, `loaded`.
 - Confidence behavior: `< 0.70` ⇒ `other_agent` (abstain).
 - *FR-C06/FR-C07/FR-C08/FR-C09/FR-C10.*
@@ -69,9 +70,10 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 - Harnesses conform to the existing [`001` CI-gate contract](../001-widget-auth-admin-cicd/contracts/ci-gate.contract.md); wiring into `ci.yml` coordinated with Owner D.
 - *FR-C12/FR-C13.*
 
-### Workstream 7 — Optional DL/ONNX + LLM comparison · **status: deferrable**
+### Workstream 7 — Served-model hardening if needed · **status: conditional**
+- The three-model comparison is **not optional** and is completed in Workstream 4.
+- If the Workstream 4 comparison selects DL/ONNX for serving, harden the exported ONNX artifact and runtime path here.
 - Offline only; **no torch/transformers in runtime containers** (export ONNX, serve via onnxruntime).
-- Compare macro-F1, latency, cost, artifact size in the model card; justify the served choice.
 
 ## 4. Cross-owner dependencies
 
@@ -89,6 +91,7 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 ## 6. Acceptance criteria
 
 - Modelserver classifies with no torch/transformers; artifact SHA-256 verified at boot; model card present. *(WS4)*
+- Model card includes the mandatory three-model comparison: classical ML, DL/ONNX, and LLM zero-shot baseline. *(WS4)*
 - Classifier input carries no `tenant_id`; below-threshold predictions abstain to `other_agent`. *(WS4)*
 - Guardrails enforce platform rails always-on; tenant rails cannot weaken a platform DENY. *(WS5)*
 - Redaction runs before any log/trace; a fake-API-key test proves no raw secret leaks. *(WS2 ✅; extended in WS6)*
@@ -101,6 +104,7 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 
 - **Per-service unit tests** (`uv run python -m pytest -q` in `modelserver`, `guardrails`, `backend`): auth (done), redaction + request-id (done), classify/threshold/hash-fail-closed (WS4), rails precedence (WS5), alias parity (WS3).
 - **Eval gates** as `evals/<gate>/run.py` per the `001` CI-gate contract: `classifier` (macro-F1 ≥ threshold), `redteam_cross_tenant` (= 1.00), `redaction` (= 1.00); each prints `GATE=… STATUS=… OBSERVED=… THRESHOLD=…`, exits 0/1/2.
+- **Canonical thresholds source:** Owner C gates read the root [`eval_thresholds.yaml`](../../eval_thresholds.yaml). The older [`evals/eval_thresholds.yaml`](../../evals/eval_thresholds.yaml) is legacy RAG/router data and is not canonical for Owner C gates.
 - **Red-team fixtures** for the seven categories in `evals/redteam_cross_tenant/fixtures/`.
 - **No-heavy-dep CI assertion**: serving lockfiles contain no `torch`/`transformers`.
 
@@ -110,4 +114,4 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 - Tenant DB schema, RLS, migrations (Owner A).
 - Agent wiring and tool implementations (Owner B).
 - Editing `.github/workflows/ci.yml` and admin UI (Owner D).
-- Editing root specs (kept upstream; a pointer back to this folder is a separate, approval-gated step).
+- Editing non-Owner-C root specs.

@@ -28,11 +28,13 @@ Tasks are grouped by the seven Owner C workstreams (each notes its phase). Check
 
 ## Workstream 4 — Classifier dataset, training, model card — Phase 4 (planned)
 - [ ] **T4.1** Dataset selection for the 5 labels; record source + SHA-256. *(needs decision)*
-- [ ] **T4.2** Offline training script (TF-IDF + LogReg/LinearSVC) → `.joblib`; **no torch/transformers in serving**.
+- [ ] **T4.2** Offline classical ML training script (TF-IDF + LogReg/LinearSVC) → `.joblib`; **no torch/transformers in serving**.
+- [ ] **T4.2a** Required DL baseline: train/export offline to ONNX, evaluate via onnxruntime; **no torch/transformers in serving**.
+- [ ] **T4.2b** Required LLM zero-shot baseline: offline eval only; record prompt/version/provider/cost assumptions without adding runtime dependency.
 - [ ] **T4.3** `modelserver/app/classifier.py` + `schemas.py`: load artifact, predict, `<0.70 → other_agent`; response carries `model_version`, `artifact_sha256`.
 - [ ] **T4.4** Boot-time SHA-256 verification; mismatch ⇒ refuse to serve; `/health` reports `model_version`/`artifact_sha256`/`loaded`.
-- [ ] **T4.5** `modelserver/MODEL_CARD.md` (task, dataset + SHA-256, metrics, served artifact SHA-256).
-- [ ] **T4.6** `evals/classifier/run.py` gating on `classifier.macro_f1_min`. **Acceptance:** classifies lean; threshold abstain; tampered artifact refused; no `tenant_id` in input; F1 ≥ gate.
+- [ ] **T4.5** `modelserver/MODEL_CARD.md` (task, dataset + SHA-256, three-model comparison for classical ML vs DL/ONNX vs LLM zero-shot, served-model rationale, metrics, served artifact SHA-256).
+- [ ] **T4.6** `evals/classifier/run.py` gating on root `eval_thresholds.yaml` → `classifier.macro_f1_min`. **Acceptance:** classifies lean; threshold abstain; tampered artifact refused; no `tenant_id` in input; F1 ≥ gate; model card includes mandatory three-model comparison.
 
 ## Workstream 5 — Guardrails sidecar + tenant/platform rails — Phase 5 (planned)
 - [ ] **T5.1** `guardrails/app/rails.py` input rails (injection/jailbreak/cross-tenant/system-prompt-leak) + output rails (PII/secret redaction, leak/cross-tenant block); `schemas.py` (`allowed/action/categories/redacted_text/reason`).
@@ -42,10 +44,10 @@ Tasks are grouped by the seven Owner C workstreams (each notes its phase). Check
 ## Workstream 6 — Red-team + redaction eval gates — Phase 6 (planned)
 - [ ] **T6.1** `evals/redteam_cross_tenant/run.py` (7 categories) + `evals/redaction/run.py`; fixtures. **Acceptance:** each category blocked/redacted; redaction leak = 0; gates = 1.00 locally.
 - [ ] **T6.2** Make each `evals/<gate>/run.py` emit `GATE=… STATUS=… OBSERVED=… THRESHOLD=…`, exit 0/1/2, append to results jsonl (per `001` contract).
-- [ ] **T6.3** Confirm `eval_thresholds.yaml` Owner C keys; `validate_thresholds` keeps redteam/redaction = 1.00.
+- [ ] **T6.3** Confirm canonical root `eval_thresholds.yaml` Owner C keys; `validate_thresholds` keeps redteam/redaction = 1.00. `evals/eval_thresholds.yaml` is legacy RAG/router data and must not be used for Owner C gates.
 - [ ] **T6.4** No-heavy-dep CI assertion: serving lockfiles free of torch/transformers.
 - [ ] **T6.5** Owner D wires gates into `.github/workflows/ci.yml` (protected — coordinate, do not edit unilaterally). **Acceptance:** gates run on PR/main; red on any safety regression.
 
-## Workstream 7 — Optional DL/ONNX + LLM comparison — Phase 7 (deferrable)
-- [ ] **T7.1** Offline DL→ONNX export served via onnxruntime (no torch/transformers in image).
-- [ ] **T7.2** Offline LLM baseline; 3-way comparison (macro-F1, latency, cost, artifact size) in `MODEL_CARD.md`.
+## Workstream 7 — Served-model hardening if needed — Phase 7 (conditional)
+- [ ] **T7.1** If Phase 4 selects DL/ONNX for serving, harden the ONNX artifact/runtime path (no torch/transformers in image).
+- [ ] **T7.2** Confirm `MODEL_CARD.md` served-choice rationale still references the completed Phase 4 classical ML vs DL/ONNX vs LLM zero-shot comparison.
