@@ -34,4 +34,4 @@ jobs:
 
       - name: Run tool-selection eval harness
         working-directory: ${{ github.workspace }}
-        run: uv run --directory backend python -m evals.tool_selection_eval --golden ../evals/tool_selection.jsonl --thresholds ../evals/eval_thresholds.yaml
+        run: PYTHONPATH=..:. uv run --directory backend python -m evals.tool_selection_eval --golden ../evals/tool_selection.jsonl --thresholds ../evals/eval_thresholds.yaml
