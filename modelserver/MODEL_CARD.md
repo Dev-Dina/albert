@@ -103,11 +103,48 @@ Artifact SHA-256:
 
 ## DL/ONNX Baseline
 
-Status: pending mandatory Phase 4 follow-up.
+Status: complete for Phase 4D; evaluated only, not selected as the production
+model.
 
-Must use the same held-out test set as the classical baseline. Runtime serving
-must not add `torch` or `transformers`; any selected DL model ships only as an
-exported ONNX artifact.
+Approach:
+
+- TF-IDF vectorizer
+- Small sklearn `MLPClassifier` neural baseline
+- Exported to ONNX with `skl2onnx`
+- Evaluated with `onnxruntime`
+- Reused the exact `train_ids` and `test_ids` from
+  `training/intent_classifier/artifacts/classical_split.json`
+
+Metrics:
+
+| Metric | Value |
+|---|---|
+| Macro-F1 | `0.9834` |
+| Test size | `600` |
+| Latency estimate | `0.0419 ms/item` |
+| Cost | `$0` offline/local inference |
+
+Per-class F1:
+
+| Label | F1 |
+|---|---|
+| `faq_rag` | `0.9958` |
+| `lead_capture` | `0.9712` |
+| `human_escalate` | `0.9667` |
+| `spam` | `0.9958` |
+| `other_agent` | `0.9874` |
+
+Artifact path:
+`training/intent_classifier/artifacts/dl_intent_mlp.onnx`
+
+Metrics path:
+`training/intent_classifier/artifacts/dl_onnx_metrics.json`
+
+Artifact SHA-256:
+`87203e8f3842d420e92a97a8c017124892063285be543c8dc780c898aa3e35b7`
+
+This baseline is not wired into `/classify` in Phase 4D. Runtime serving still
+uses the classical artifact.
 
 ## LLM Zero-Shot Baseline
 
@@ -121,6 +158,14 @@ model/provider/version, macro-F1, per-class F1, latency, and cost assumptions.
 Interim Phase 4B serving choice: classical TF-IDF + LogisticRegression baseline.
 The production choice remains pending until the mandatory DL/ONNX and LLM
 zero-shot baselines are evaluated on the same held-out split.
+
+## Same-Test-Set Comparison
+
+| Baseline | Status | Macro-F1 | Test size | Latency | Cost | Artifact / output |
+|---|---|---:|---:|---:|---:|---|
+| Classical TF-IDF + LogisticRegression | Served interim | `0.9718` | `600` | `0.0101 ms/item` | `$0` | `training/intent_classifier/artifacts/classical_intent_logreg.joblib` |
+| Small DL sklearn MLP exported to ONNX | Evaluated, not selected | `0.9834` | `600` | `0.0419 ms/item` | `$0` | `training/intent_classifier/artifacts/dl_intent_mlp.onnx` |
+| LLM zero-shot | Pending mandatory baseline | TBD | `600` | TBD | TBD | TBD |
 
 ## Serving Notes
 
