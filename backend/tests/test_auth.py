@@ -23,12 +23,25 @@ def _make_user() -> User:
     )
 
 
+class _FakeScalars:
+    """Stand-in for Result.scalars(); current login reads memberships via .first()."""
+
+    def first(self) -> object:
+        return None  # no membership → login resolves to the default member role
+
+    def all(self) -> list:
+        return []
+
+
 class _FakeResult:
     def __init__(self, obj: object) -> None:
         self._obj = obj
 
     def scalar_one_or_none(self) -> object:
         return self._obj
+
+    def scalars(self) -> "_FakeScalars":
+        return _FakeScalars()
 
 
 class _FakeSession:
@@ -65,7 +78,7 @@ def test_hash_rejects_wrong_password() -> None:
 def test_login_success_returns_bearer_token() -> None:
     app.dependency_overrides[get_db] = _override_db(_make_user())
     response = client.post(
-        "/api/v1/auth/login",
+        "/auth/login",
         json={"email": "admin@example.com", "password": _PASSWORD},
     )
     assert response.status_code == 200
@@ -77,14 +90,14 @@ def test_login_success_returns_bearer_token() -> None:
 def test_login_wrong_password_returns_401() -> None:
     app.dependency_overrides[get_db] = _override_db(_make_user())
     response = client.post(
-        "/api/v1/auth/login",
+        "/auth/login",
         json={"email": "admin@example.com", "password": "wrong-password"},
     )
     assert response.status_code == 401
 
 
 def test_me_without_token_returns_401() -> None:
-    response = client.get("/api/v1/auth/me")
+    response = client.get("/auth/me")
     assert response.status_code == 401
 
 
@@ -92,7 +105,7 @@ def test_me_with_valid_token_returns_user() -> None:
     app.dependency_overrides[get_db] = _override_db(_make_user())
     token = create_access_token(subject=str(_USER_ID), role="tenant_manager")
     response = client.get(
-        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+        "/auth/me", headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 200
     body = response.json()

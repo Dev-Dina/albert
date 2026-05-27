@@ -19,6 +19,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     hashed_password: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Platform-level role (e.g. "tenant_manager"); distinct from tenant_memberships.role.
+    # Column lives in migration 0002_add_user_platform_role; restored here after a prior
+    # main-merge dropped it from the model (model/migration drift).
+    platform_role: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -1,6 +1,6 @@
 """add user platform_role
 
-Revision ID: 0002
+Revision ID: 0002_add_user_platform_role
 Revises: 0001
 Create Date: 2026-05-25
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "0002"
+revision: str = "0002_add_user_platform_role"
 down_revision: str | None = "0001"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

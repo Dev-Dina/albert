@@ -15,7 +15,9 @@ def test_health() -> None:
     }
 
 
-def test_predict_placeholder() -> None:
-    response = client.post("/predict")
+def test_predict_placeholder(service_token: str) -> None:
+    response = client.post(
+        "/predict", headers={"Authorization": f"Bearer {service_token}"}
+    )
     assert response.status_code == 200
     assert response.json() == {"label": "unknown", "confidence": 0.0}

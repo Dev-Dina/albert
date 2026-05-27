@@ -1,7 +1,7 @@
 """content_chunks: replace JSONB embedding with pgvector Vector(1536)
 
-Revision ID: 0003
-Revises: 0002
+Revision ID: 0007_content_chunks_pgvector
+Revises: 0006_chunk_tables
 Create Date: 2026-05-26
 
 Replaces the placeholder JSONB embedding column with a proper
@@ -28,8 +28,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "0003"
-down_revision: str | None = "0002"
+revision: str = "0007_content_chunks_pgvector"
+down_revision: str | None = "0006_chunk_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
