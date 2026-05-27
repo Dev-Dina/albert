@@ -64,6 +64,7 @@ Notes:
 - `.env` is git-ignored; `.env.example` is tracked (committed) and is the source of defaults.
 - Backend config is centralized in `backend/app/core/config.py` (pydantic-settings); tests do
   not require a real `.env` (every setting has a default).
+- Secret inventory and Vault/local fallback rules live in [docs/SECRETS.md](docs/SECRETS.md).
 
 ## Backend Endpoints
 
@@ -112,6 +113,8 @@ Local distributed tracing uses OpenTelemetry with Jaeger all-in-one.
 
 - Tracing backend: OpenTelemetry + Jaeger.
 - UI: <http://localhost:16686>
+- Config: `JAEGER_UI_BASE_URL=http://localhost:16686`,
+  `JAEGER_QUERY_BASE_URL=http://localhost:16686`.
 - Services traced: backend, modelserver, guardrails.
 - Propagation: W3C trace context plus existing `X-Request-ID` correlation.
 - Safety: do not trace raw user text, prompts, Authorization headers, cookies,

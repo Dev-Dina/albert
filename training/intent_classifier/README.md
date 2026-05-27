@@ -61,3 +61,43 @@ TF-IDF features, and LogisticRegression. It writes the artifact and metrics unde
 
 Phase 4A does not wire the artifact into `/classify`; serving integration is a
 later phase.
+
+## LLM Zero-Shot Eval
+
+The official mandatory baseline uses **Gemini 2.0 Flash** — the same model the
+backend agent/RAG path uses (`gemini_model`, ADR-007) — on the **full held-out
+split** (600 examples, the exact `test_ids` from `classical_split.json`).
+
+Set `GEMINI_API_KEY` in the environment first (Owner A/Vault inject it outside
+local dev). The key is never logged, traced, or written to metrics; predictions
+store only text length + SHA-256, never raw message text.
+
+Balanced diagnostic dry run (50 examples, 10 per label) with the official model:
+
+```powershell
+uv run --project training/intent_classifier python training/intent_classifier/evaluate_llm_zero_shot.py --provider project-default --sample-per-class 10 --predictions training/intent_classifier/artifacts/llm_zs_gemini20_balanced50_predictions.jsonl --metrics training/intent_classifier/artifacts/llm_zs_gemini20_balanced50_metrics.json
+```
+
+Official full held-out run (600 examples, writes the canonical metrics file):
+
+```powershell
+uv run --project training/intent_classifier python training/intent_classifier/evaluate_llm_zero_shot.py --provider project-default
+```
+
+Add `--input-price-per-1m <usd> --output-price-per-1m <usd>` to record a dollar
+cost estimate. Use `--resume` to continue an interrupted full run (matching
+`prompt_version` + model only).
+
+Notes:
+
+- `--provider project-default` pins Gemini 2.0 Flash. `--provider gemini --model <name>`
+  evaluates a specific Gemini model. `--provider groq` is a documented future
+  fallback (ADR-007) and is **not implemented**.
+- `--sample-per-class N` is a balanced dry run; `--limit N` takes the first N
+  held-out examples and may be label-unbalanced. **Partial runs are diagnostics
+  only and must not update `MODEL_CARD.md`.**
+- The Gemini 2.5 Flash-Lite 50-example result is a **diagnostic only** (different,
+  cheaper model), not the official baseline.
+- Each run records `provider`, `model_name`, `prompt_version`, evaluated/predicted
+  label distributions, a confusion matrix, macro-F1, per-class F1, latency, and
+  cost in the metrics file.

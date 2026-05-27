@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Offline training utilities for the Owner C visitor-intent classifier."
 requires-python = ">=3.12"
 dependencies = [
+    "httpx",
     "joblib",
     "numpy",
     "onnxruntime",
