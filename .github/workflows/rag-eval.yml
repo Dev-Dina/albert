@@ -39,7 +39,7 @@ jobs:
 
       - name: Run RAG eval harness
         working-directory: ${{ github.workspace }}
-        run: PYTHONPATH=. uv run --directory backend python -m evals.rag_eval --golden evals/rag_golden.jsonl
+        run: PYTHONPATH=..:. uv run --directory backend python -m evals.rag_eval --golden ../evals/rag_golden.jsonl
 
       - name: Run tool-selection eval harness
         working-directory: ${{ github.workspace }}
