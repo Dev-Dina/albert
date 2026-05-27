@@ -1,0 +1,15 @@
+{"question": "What are your opening hours?", "ideal_answer": "We are open Monday to Friday 9am to 5pm.", "ground_truth_chunk_ids": ["chunk-hours-001"]}
+{"question": "Are you open on weekends?", "ideal_answer": "We are closed on weekends.", "ground_truth_chunk_ids": ["chunk-hours-002"]}
+{"question": "What time do you close on Fridays?", "ideal_answer": "We close at 5pm on Fridays.", "ground_truth_chunk_ids": ["chunk-hours-003"]}
+{"question": "What is your return policy?", "ideal_answer": "You can return any item within 30 days of purchase for a full refund.", "ground_truth_chunk_ids": ["chunk-returns-001"]}
+{"question": "How do I return a damaged item?", "ideal_answer": "Contact our support team and we will arrange a free return for damaged items.", "ground_truth_chunk_ids": ["chunk-returns-002"]}
+{"question": "Can I exchange an item instead of returning it?", "ideal_answer": "Yes, exchanges are accepted within 30 days as long as the item is unused.", "ground_truth_chunk_ids": ["chunk-returns-003"]}
+{"question": "How long does shipping take?", "ideal_answer": "Standard shipping takes 3 to 5 business days.", "ground_truth_chunk_ids": ["chunk-shipping-001"]}
+{"question": "Do you offer express delivery?", "ideal_answer": "Yes, express delivery is available and typically arrives in 1 to 2 business days.", "ground_truth_chunk_ids": ["chunk-shipping-002"]}
+{"question": "What countries do you ship to?", "ideal_answer": "We currently ship to the UK, US, Canada, and Australia.", "ground_truth_chunk_ids": ["chunk-shipping-003"]}
+{"question": "How much does your basic plan cost?", "ideal_answer": "Our basic plan starts at $29 per month.", "ground_truth_chunk_ids": ["chunk-pricing-001"]}
+{"question": "Is there a free trial available?", "ideal_answer": "Yes, we offer a 14-day free trial with no credit card required.", "ground_truth_chunk_ids": ["chunk-pricing-002"]}
+{"question": "What is included in the premium plan?", "ideal_answer": "The premium plan includes unlimited users, priority support, and advanced analytics.", "ground_truth_chunk_ids": ["chunk-pricing-003"]}
+{"question": "How do I contact customer support?", "ideal_answer": "You can reach our support team by email at support@example.com or via live chat.", "ground_truth_chunk_ids": ["chunk-contact-001"]}
+{"question": "What is your phone number?", "ideal_answer": "Our customer service line is available at +1-800-555-0100 during business hours.", "ground_truth_chunk_ids": ["chunk-contact-002"]}
+{"question": "Where is your office located?", "ideal_answer": "Our main office is located at 123 Main Street, London, UK.", "ground_truth_chunk_ids": ["chunk-contact-003"]}

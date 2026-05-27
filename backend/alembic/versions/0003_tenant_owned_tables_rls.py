@@ -1,7 +1,7 @@
 """tenant-owned tables with RLS
 
-Revision ID: 0002
-Revises: 0001
+Revision ID: 0003_tenant_owned_tables_rls
+Revises: 0002_add_user_platform_role
 Create Date: 2026-05-25
 
 Creates every tenant-owned table, enables and forces RLS on each, and installs
@@ -20,8 +20,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0002"
-down_revision: str | None = "0001"
+revision: str = "0003_tenant_owned_tables_rls"
+down_revision: str | None = "0002_add_user_platform_role"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

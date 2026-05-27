@@ -24,13 +24,20 @@ from app.tenancy.provisioning import create_platform_manager
 _ENGINE = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 
 
+# Only the platform tables these tests exercise. The full Base.metadata also holds
+# pgvector/JSONB tables (chunks, guardrail/widget configs) that SQLite cannot compile;
+# those paths require Postgres. Scope create/drop so this stays an in-memory unit test.
+_PLATFORM_TABLES = ("users", "tenants", "tenant_memberships", "audit_logs")
+
+
 @pytest_asyncio.fixture(autouse=True, scope="module")
 async def create_tables():
+    tables = [t for t in Base.metadata.sorted_tables if t.name in _PLATFORM_TABLES]
     async with _ENGINE.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
     yield
     async with _ENGINE.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(lambda c: Base.metadata.drop_all(c, tables=tables))
 
 
 @pytest_asyncio.fixture

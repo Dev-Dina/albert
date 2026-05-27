@@ -9,6 +9,8 @@ services:
     build:
       context: ./backend
     env_file: .env
+    volumes:
+      - ./widget/dist:/widget/dist:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -23,7 +25,6 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
-
   modelserver:
     build:
       context: ./modelserver
