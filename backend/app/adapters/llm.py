@@ -97,12 +97,22 @@ class LLMAdapter:
         return _GeminiResponseWrapper(response)
 
 
+class _GeminiUsage:
+    """Token counts extracted from Gemini usage_metadata."""
+
+    def __init__(self, response: object) -> None:
+        meta = getattr(response, "usage_metadata", None)
+        self.prompt_tokens: int = getattr(meta, "prompt_token_count", 0) or 0
+        self.completion_tokens: int = getattr(meta, "candidates_token_count", 0) or 0
+
+
 class _GeminiResponseWrapper:
     """Wraps a Gemini response to expose the choices[0] interface the agent loop expects."""
 
     def __init__(self, response: object) -> None:
         self._response = response
         self.choices = [_GeminiChoiceWrapper(response)]
+        self.usage = _GeminiUsage(response)
 
 
 class _GeminiChoiceWrapper:

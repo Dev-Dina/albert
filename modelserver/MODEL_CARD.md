@@ -161,6 +161,12 @@ Approach:
 - Reused the same 600-item held-out test split as the classical and DL/ONNX
   baselines
 
+`gemini-2.5-flash-lite` is the official recorded LLM zero-shot baseline for this
+submission. Earlier `gemini-2.0-flash` references (planning/config/provider
+version) are not this committed artifact; the maintained baseline run uses
+`gemini-2.5-flash-lite` (provider model-lifecycle update). CI does not call
+Gemini — it consumes the committed metrics/predictions artifacts.
+
 Metrics:
 
 | Metric | Value |
@@ -227,7 +233,9 @@ rather than a natural semantic category.
 
 ## Serving Notes
 
-Modelserver verifies the served artifact SHA-256 at load time and refuses
-classification if it does not match the pinned hash. Runtime dependencies remain
+Modelserver verifies the served artifact SHA-256 at load time. On a mismatch it
+fails closed: classification requests return 503 and the mismatched model is not
+used. The service may still boot to expose health/error diagnostics (health
+reports `loaded: false` with the mismatch error). Runtime dependencies remain
 lean: `fastapi`, `uvicorn`, `scikit-learn`, and `joblib`; no `torch` or
 `transformers`.

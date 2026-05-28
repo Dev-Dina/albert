@@ -9,17 +9,19 @@ The five stores that must be emptied (per PROJECT_CONTEXT.md §11):
   2. pgvector     — content_chunks embeddings WHERE tenant_id = X
                     (handled by Postgres cascade, verified explicitly)
   3. MinIO        — all blobs under the tenant namespace
-  4. Redis        — all sessions for the tenant
-  5. Traces/logs  — purge hook (stub for C's implementation)
+  4. Redis        — sessions AND conversation memory for the tenant
+  5. Traces/logs  — no-op by design: raw sensitive data is never written to
+                    traces/logs (redacted upstream), so there is nothing to
+                    purge. See docs/DECISIONS.md ADR-013.
 
 "The row is deleted but the embeddings are still searchable" is a
 compliance failure.  The erasure test (test_erasure_total.py) asserts
 all five stores independently.
 
 Cross-owner hook signatures agreed on day one:
-  B exposes: no separate hook needed — pgvector lives in content_chunks (Postgres cascade)
-             and Redis sessions keyed as  session:{tenant_id}:*
-  C exposes: purge_tenant_traces(tenant_id) — stub below until C implements it
+  B exposes: no separate hook needed — pgvector lives in content_chunks (Postgres cascade);
+             Redis keys are  session:{tenant_id}:*  and  conv:{tenant_id}:*
+  C exposes: nothing — traces carry no raw tenant data by design (ADR-013)
   D owns:    the UI button that calls the /tenants/{id}/erase endpoint
 """
 
@@ -118,10 +120,13 @@ async def erase_tenant(
     summary["redis.sessions"] = redis_count
 
     # ------------------------------------------------------------------
-    # 5. Traces / logs — stub; C implements the real purge hook
+    # 5. Traces / logs — no-op by design (ADR-013): raw sensitive data is
+    #    never written to traces/logs, so there is nothing tenant-specific
+    #    to purge. Revisit if a persistent trace store with tenant payloads
+    #    is ever introduced.
     # ------------------------------------------------------------------
     await _erase_traces(tenant_id)
-    summary["traces"] = 0  # updated when C wires the real hook
+    summary["traces"] = 0  # by design: no raw tenant data in traces (ADR-013)
 
     # ------------------------------------------------------------------
     # Mark tenant as erased in the platform table (not deleted — for audit)
@@ -198,26 +203,29 @@ async def _erase_minio(tenant_id: uuid.UUID) -> int:
 
 
 async def _erase_redis(tenant_id: uuid.UUID) -> int:
-    """Delete all Redis session keys for this tenant.
+    """Delete all Redis keys for this tenant across known tenant-scoped prefixes.
 
-    Session key pattern: ``session:{tenant_id}:*``
+    Key patterns (tenant_id is a UUID, so it carries no glob metacharacters):
+      - ``session:{tenant_id}:*``  — widget/visitor sessions
+      - ``conv:{tenant_id}:*``     — conversation memory (services/memory.py)
 
-    Returns the number of keys deleted.
+    Returns the total number of keys deleted.
     """
-    pattern = f"session:{tenant_id}:*"
+    patterns = (f"session:{tenant_id}:*", f"conv:{tenant_id}:*")
     count = 0
     try:
         url = settings.redis_url or "redis://redis:6379/0"
         client = aioredis.from_url(url, decode_responses=True)
         async with client as r:
-            cursor = 0
-            while True:
-                cursor, keys = await r.scan(cursor, match=pattern, count=100)
-                if keys:
-                    await r.delete(*keys)
-                    count += len(keys)
-                if cursor == 0:
-                    break
+            for pattern in patterns:
+                cursor = 0
+                while True:
+                    cursor, keys = await r.scan(cursor, match=pattern, count=100)
+                    if keys:
+                        await r.delete(*keys)
+                        count += len(keys)
+                    if cursor == 0:
+                        break
         logger.info("erasure.redis tenant=%s keys_deleted=%d", tenant_id, count)
     except Exception:
         logger.warning(
@@ -229,12 +237,13 @@ async def _erase_redis(tenant_id: uuid.UUID) -> int:
 
 
 async def _erase_traces(tenant_id: uuid.UUID) -> None:
-    """Stub: purge tenant references from traces and logs.
+    """No-op by design (ADR-013): traces/logs carry no raw tenant data.
 
-    Owner C implements the real hook here.  Until then, log a warning so ops
-    knows a manual step is required after erasure.
+    Tracing (OpenTelemetry + Jaeger) and logging only ever record redacted,
+    non-sensitive attributes (lengths, hashes, categories, redaction counts) —
+    never raw user text, PII, secrets, prompts, or tokens. There is therefore
+    nothing tenant-specific to purge here. If a persistent trace store that
+    holds tenant payloads is introduced later, it MUST implement tenant purge
+    and this function must be updated.
     """
-    logger.warning(
-        "erasure.traces_stub tenant=%s — Owner C must implement trace/log purge",
-        tenant_id,
-    )
+    logger.debug("erasure.traces tenant=%s — no-op by design (ADR-013)", tenant_id)

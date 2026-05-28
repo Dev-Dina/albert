@@ -15,6 +15,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from app.core.config import settings
+from app.core.redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +46,12 @@ def _enabled(value: bool | str) -> bool:
 
 def is_safe_span_attribute(name: str, value: Any) -> bool:
     """Return whether a custom span attribute is safe for Albert traces."""
-    del value
     normalized = name.lower().replace("-", "_")
-    return not any(forbidden in normalized for forbidden in FORBIDDEN_ATTRIBUTE_NAMES)
+    if any(forbidden in normalized for forbidden in FORBIDDEN_ATTRIBUTE_NAMES):
+        return False
+    if value is None or isinstance(value, (bool, int, float)):
+        return True
+    return redact(str(value)).total == 0
 
 
 def safe_set_span_attribute(name: str, value: Any) -> None:

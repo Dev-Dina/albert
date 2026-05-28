@@ -12,12 +12,17 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
+from unittest.mock import AsyncMock
+from unittest.mock import patch as _patch
 
 from fastapi.testclient import TestClient
 
 from app.core.security import mint_widget_session_token
 from app.main import app
+from app.schemas.router import RouterDecision
+from app.services.agent import AgentResult
 
 client = TestClient(app)
 
@@ -270,12 +275,30 @@ def test_chat_succeeds_when_origin_still_on_allowlist() -> None:
     allowed_origin_repo.exists_for_tenant = _fake_exists_for_tenant  # type: ignore[assignment]
     deps._fetch_active_key_version = _fake_active_key  # type: ignore[assignment]
 
-    response = client.post(
-        "/api/v1/widget/chat",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Origin": _ALLOWED_ORIGIN_A,
-        },
-        json={"message": "hi"},
-    )
+    async def _null_db_gen(*args, **kwargs):
+        yield None
+
+    _mock_agent_result = AgentResult(reply="ok", escalated=False, iterations_used=1)
+    _faq_decision = RouterDecision(action="agent", label="faq_rag", confidence=0.9, routed_to="agent")
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(return_value=None)
+    app.state.redis.setex = AsyncMock()
+    app.state.llm = AsyncMock()
+    app.state.embedder = AsyncMock()
+    app.state.reranker = AsyncMock()
+
+    with (
+        _patch("app.api.routes.widget_chat._guardrails_check", new=AsyncMock(return_value=True)),
+        _patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_faq_decision)),
+        _patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen),
+        _patch("app.api.routes.widget_chat.run_agent", new=AsyncMock(return_value=_mock_agent_result)),
+    ):
+        response = client.post(
+            "/api/v1/widget/chat",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Origin": _ALLOWED_ORIGIN_A,
+            },
+            json={"message": "hi"},
+        )
     assert response.status_code == 200, response.text

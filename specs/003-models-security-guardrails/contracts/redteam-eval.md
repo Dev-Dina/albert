@@ -36,10 +36,22 @@ Each runner follows the existing CI gate contract:
 - Print one final line:
   `GATE=<name> STATUS=<pass|fail|error> OBSERVED=<value-or-NA> THRESHOLD=<value-or-NA>`.
 - Exit `0` on pass, `1` on threshold failure, `2` on runner/config error.
-- Append one JSONL record to `artifacts/ci-gate-results.json`.
+- Print human-readable details to stdout by default and do not create root
+  artifacts unless explicitly requested.
+- Support optional `--output <path>` for CI summaries; when provided, append one
+  JSONL record compatible with `artifacts/ci-gate-results.json`.
 
 Any safety leak or allowed attack makes the relevant pass rate lower than 1.00
 and therefore fails the gate.
+
+## Generated Artifact Rule
+
+- Root `artifacts/` is generated local/CI output and should not be committed.
+- Eval runners print to stdout by default. CI may opt in to JSON output with
+  `--output artifacts/ci-gate-results.json`.
+- Model artifacts under `training/intent_classifier/artifacts/` and
+  `modelserver/artifacts/` are different from generated gate output and must not
+  be deleted, ignored, or cleaned up by Phase 7 redaction work.
 
 ## Red-Team Fixture Format
 
@@ -96,16 +108,30 @@ Each JSONL row represents one planted fake sensitive value:
 
 Required redaction kinds:
 
-- fake API keys / service tokens
+- fake API keys
+- Gemini-style, OpenAI-style, and Groq-style API keys
+- Bearer tokens
+- service auth tokens
+- JWT-like strings
 - emails
 - phones
-- token-like strings
+- generic long token-like strings
 - credit-card-like strings
 
 Redaction expectations:
 
-- Redaction happens before logs, traces, memory, responses, and error outputs.
-- Logs/traces may record counts and types only, never raw values.
+- Redaction happens before logs, traces, memory, responses, generated eval
+  output, generated CI artifacts, and error outputs.
+- Leak surfaces include backend logs, guardrails logs, modelserver logs,
+  exception tracebacks, HTTP error responses where applicable, OpenTelemetry span
+  attributes, access logs, guardrails responses, eval runner output, and
+  generated CI artifacts.
+- Access logs must be disabled, sanitized, or proven not to include raw visitor
+  text, prompts, headers, cookies, or secrets.
+- Logs/traces may record counts, types, lengths, and hashes only, never raw
+  values or raw user text.
+- Raw user text, raw prompts, system prompts, Authorization headers, cookies,
+  API keys, service tokens, and other raw secrets are forbidden in traces/logs.
 - Detectors fail closed: if detection errors, return redacted-safe output rather
   than raw text.
 - A fixture fails if any `must_not_appear` value is present in response,

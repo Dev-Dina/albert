@@ -28,9 +28,15 @@ SPLIT_PATH = ARTIFACT_DIR / "classical_split.json"
 PREDICTIONS_PATH = ARTIFACT_DIR / "llm_zero_shot_predictions.jsonl"
 METRICS_PATH = ARTIFACT_DIR / "llm_zero_shot_metrics.json"
 
-DEFAULT_MODEL = "gemini-2.0-flash"
-# The app's agent/RAG model (backend gemini_model, ADR-007). --provider project-default pins this.
-PROJECT_DEFAULT_MODEL = "gemini-2.0-flash"
+# Official recorded LLM zero-shot baseline for this submission (committed artifact:
+# artifacts/llm_zero_shot_metrics.json). Earlier `gemini-2.0-flash` references were
+# planning/provider-version references and are NOT the submitted benchmark artifact;
+# the maintained baseline run uses `gemini-2.5-flash-lite` (provider model-lifecycle
+# update — older experimental/preview model IDs can be superseded). CI does not call
+# Gemini; it consumes the committed evaluation artifacts and the model card.
+DEFAULT_MODEL = "gemini-2.5-flash-lite"
+# --provider project-default pins the official recorded baseline model.
+PROJECT_DEFAULT_MODEL = "gemini-2.5-flash-lite"
 # Only Gemini is implemented; recorded in metrics/predictions per ADR-007.
 PROVIDER_API = "gemini"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -447,8 +453,8 @@ def parse_args() -> argparse.Namespace:
         default="gemini",
         help=(
             "API provider. 'gemini' (default) uses --model. 'project-default' pins "
-            "Gemini 2.0 Flash, the app's agent model. 'groq' is a documented future "
-            "fallback (ADR-007) and is not implemented."
+            "the official recorded baseline (gemini-2.5-flash-lite). 'groq' is a "
+            "documented future fallback (ADR-007) and is not implemented."
         ),
     )
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Gemini model name")

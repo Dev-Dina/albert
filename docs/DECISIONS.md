@@ -118,6 +118,12 @@ never committed, logged, traced, or written to metrics/model cards.
 `intent-zero-shot-v2-balanced-labels`, same 600-item held-out split as the
 classical and DL/ONNX baselines.
 
+`gemini-2.5-flash-lite` is the official recorded baseline for this submission.
+Earlier `gemini-2.0-flash` references were planning/provider-version references,
+not this committed artifact (provider model-lifecycle update — older
+experimental/preview model IDs can be superseded). CI does not call Gemini; it
+uses the committed evaluation artifacts and the model card.
+
 | Baseline | Macro-F1 | Latency |
 |---|---:|---:|
 | Classical TF-IDF + LogisticRegression | `0.971762` | `0.0101 ms/item` |
@@ -189,3 +195,85 @@ The serving container must stay lean.
 system-prompt extraction, tenant override, tool-abuse, and secret-extraction
 patterns. Phase 7 remains responsible for deeper redaction hardening and broader
 leak-surface coverage.
+
+---
+
+## ADR-011: Redaction Hardening Gate
+
+**Decision**: use a separate `evals/redaction/run.py` gate for planted-value
+leak testing, while keeping attack probes in `evals/redteam_cross_tenant/run.py`.
+
+**Context**: redaction must be proven across logs, traces, responses, errors,
+eval output, and generated CI artifacts. The redaction threshold is already
+canonical in root `eval_thresholds.yaml` as `redaction.required_pass_rate = 1.00`.
+
+**Rationale**:
+
+- A separate gate keeps leak fixtures focused and easier to expand.
+- It cleanly distinguishes "attack blocked" from "sensitive value leaked".
+- Local runs should print to stdout by default so root `artifacts/` output is
+  not generated unless CI passes `--output`.
+- Model artifacts under `training/intent_classifier/artifacts/` and
+  `modelserver/artifacts/` are not generated CI output and must not be cleaned
+  up by redaction work.
+
+**Consequence**: Phase 7B implements the redaction runner, fixtures, and tests
+against the full leak-surface contract. Owner D can later wire the same command
+with `--output artifacts/ci-gate-results.json` in CI.
+
+---
+
+## ADR-012: Phase 7B Redaction Leak Surfaces
+
+**Decision**: harden redaction with deterministic service-local redactors and
+stdout-only eval runners by default.
+
+**Context**: backend already had a log redaction filter, guardrails already
+redacted responses, and modelserver had no redaction filter. Phase 7B needed
+coverage without a risky cross-service refactor.
+
+**Rationale**:
+
+- Service-local redactors keep the change small and avoid coupling the
+  sidecars to backend internals.
+- Stable placeholders make test and eval output predictable:
+  `[REDACTED_API_KEY]`, `[REDACTED_TOKEN]`, `[REDACTED_EMAIL]`,
+  `[REDACTED_PHONE]`, and `[REDACTED_CREDIT_CARD]`.
+- Custom OpenTelemetry attributes reject unsafe names and unsafe string values;
+  safe numeric summaries such as lengths remain allowed.
+- App code does not log raw request bodies. Uvicorn/access-log policy should
+  stay no-body/sanitized if configured later.
+- Root `artifacts/` is generated local/CI output; default eval runs do not write
+  it. CI must opt in with `--output`.
+
+**Consequence**: Phase 7B covers planted fake/provider keys, Bearer/service
+tokens, JWT-like strings, emails, phones, credit-card-like strings, generic
+token-like strings, app logs, guardrails responses, custom trace attributes,
+eval stdout, and optional eval JSON. Phase 8 can wire the commands into CI.
+
+---
+
+## ADR-013: Tenant Erasure — Redis Coverage and Traces/Logs
+
+**Decision**: tenant erasure purges all tenant-scoped Redis keys
+(`session:{tenant_id}:*` AND `conv:{tenant_id}:*`) and treats traces/logs as a
+no-op because raw sensitive data is never written to them.
+
+**Context**: PROJECT_CONTEXT §11 lists "traces/logs" among the stores erasure
+must clear, and conversation memory is written to Redis as
+`conv:{tenant_id}:{conversation_id}` (services/memory.py). Earlier erasure only
+deleted `session:` keys. Tracing (OpenTelemetry + Jaeger, ADR-006) and logging
+record only redacted, non-sensitive attributes — lengths, hashes, categories,
+redaction counts — never raw user text, PII, secrets, prompts, Authorization
+headers, cookies, or tokens. Local Jaeger is ephemeral with no persistent
+tenant-payload store.
+
+**Rationale**:
+- Conversation memory is tenant data and must be erased — now covered.
+- There is no raw tenant data in traces/logs to delete, so a purge is a no-op;
+  redaction-before-emit is the actual control.
+
+**Consequence**: `_erase_redis` scans both `session:` and `conv:` prefixes;
+`_erase_traces` is a documented no-op (`summary["traces"] = 0`). If a persistent
+trace store holding tenant payloads is ever introduced, it MUST implement tenant
+purge and this ADR must be revisited.

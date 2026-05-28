@@ -64,9 +64,20 @@ later phase.
 
 ## LLM Zero-Shot Eval
 
-The official mandatory baseline uses **Gemini 2.0 Flash** — the same model the
-backend agent/RAG path uses (`gemini_model`, ADR-007) — on the **full held-out
-split** (600 examples, the exact `test_ids` from `classical_split.json`).
+The official recorded LLM zero-shot baseline for this submission is
+**`gemini-2.5-flash-lite`**, evaluated on the **full held-out split** (600
+examples, the exact `test_ids` from `classical_split.json`). Earlier references to
+`gemini-2.0-flash` or experimental/preview Gemini 2.0 variants were
+planning/provider-version references and are **not** the submitted benchmark
+artifact. This migration follows provider model-lifecycle realities: older
+experimental/preview model IDs can be superseded or shut down, so the committed
+baseline records the maintained Gemini 2.5 Flash Lite run. CI does not call Gemini;
+it uses committed evaluation artifacts and the model card.
+
+The shipped production classifier remains the **classical TF-IDF + Logistic
+Regression** model, not Gemini. Gemini was used only as an LLM baseline comparison
+and was rejected for serving (lower quality, higher cost/latency, provider
+dependency).
 
 Set `GEMINI_API_KEY` in the environment first (Owner A/Vault inject it outside
 local dev). The key is never logged, traced, or written to metrics; predictions
@@ -75,7 +86,7 @@ store only text length + SHA-256, never raw message text.
 Balanced diagnostic dry run (50 examples, 10 per label) with the official model:
 
 ```powershell
-uv run --project training/intent_classifier python training/intent_classifier/evaluate_llm_zero_shot.py --provider project-default --sample-per-class 10 --predictions training/intent_classifier/artifacts/llm_zs_gemini20_balanced50_predictions.jsonl --metrics training/intent_classifier/artifacts/llm_zs_gemini20_balanced50_metrics.json
+uv run --project training/intent_classifier python training/intent_classifier/evaluate_llm_zero_shot.py --provider project-default --sample-per-class 10 --predictions training/intent_classifier/artifacts/llm_zs_flashlite_balanced50_predictions.jsonl --metrics training/intent_classifier/artifacts/llm_zs_flashlite_balanced50_metrics.json
 ```
 
 Official full held-out run (600 examples, writes the canonical metrics file):
@@ -90,14 +101,15 @@ cost estimate. Use `--resume` to continue an interrupted full run (matching
 
 Notes:
 
-- `--provider project-default` pins Gemini 2.0 Flash. `--provider gemini --model <name>`
-  evaluates a specific Gemini model. `--provider groq` is a documented future
-  fallback (ADR-007) and is **not implemented**.
+- `--provider project-default` pins the official recorded baseline
+  (`gemini-2.5-flash-lite`). `--provider gemini --model <name>` evaluates a
+  specific Gemini model. `--provider groq` is a documented future fallback
+  (ADR-007) and is **not implemented**.
 - `--sample-per-class N` is a balanced dry run; `--limit N` takes the first N
   held-out examples and may be label-unbalanced. **Partial runs are diagnostics
   only and must not update `MODEL_CARD.md`.**
-- The Gemini 2.5 Flash-Lite 50-example result is a **diagnostic only** (different,
-  cheaper model), not the official baseline.
+- The 50-example balanced run is a **diagnostic only** (a subset, not the full
+  600-item split), not the official baseline.
 - Each run records `provider`, `model_name`, `prompt_version`, evaluated/predicted
   label distributions, a confusion matrix, macro-F1, per-class F1, latency, and
   cost in the metrics file.

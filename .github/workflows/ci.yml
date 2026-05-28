@@ -1,50 +1,318 @@
 name: CI
 
+# PROTECTED FILE — see CLAUDE.md.
+# Rewritten for spec 001-widget-auth-admin-cicd (Owner D, Phase 6).
+#
+# Pipeline contract (FR-021..030, contracts/ci-gate.contract.md):
+#   1. validate_thresholds  — first step; refuses to run if redteam/redaction
+#                              required_pass_rate < 1.0 (FR-026, FR-027).
+#   2. lint, typecheck, image_build  — parallel after validate_thresholds.
+#   3. smoke  — needs image_build; failure short-circuits eval gates (FR-028).
+#   4. five eval gates (classifier, agent_tool_selection, rag,
+#      redteam_cross_tenant, redaction) — parallel after smoke.
+#   5. summary  — always() after gates; renders markdown table to
+#      $GITHUB_STEP_SUMMARY and fails the build if any gate failed.
+#
+# No `continue-on-error: true` on any gate (FR-030). Flakes surface as red.
+
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
-  backend-lint:
-    uses: ./.github/workflows/backend-lint.yml
-
-  rag-eval:
-    uses: ./.github/workflows/rag-eval.yml
-
-  # -------------------------------------------------------------------------
-  # Job 3: fast unit tests — no database required
-  # -------------------------------------------------------------------------
-  unit-tests:
-    name: Unit Tests
+  validate_thresholds:
+    name: Validate thresholds (FR-026/FR-027 floor)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python -m evals.common.validate_thresholds
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync
+      - run: uv run ruff check .
+
+  typecheck:
+    name: Type-check (syntax floor)
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Minimum bar: every .py file must parse cleanly. Promote to mypy/pyright
+      # in a follow-up once typed stubs land for the new services.
+      - run: python -m compileall -q backend/app admin/app evals scripts
+
+  image_build:
+    name: Image build + widget bundle size
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install widget deps + build
+        working-directory: widget
+        run: |
+          npm install
+          node esbuild.config.mjs
+
+      # T088: enforce bundle byte budgets in CI.
+      # widget.js (loader)  ≤ 4096 bytes  (plan.md Performance Goals)
+      # bundle-*.js        ≤ 163840 bytes (160 KB ceiling; see T095a follow-up
+      #                                    to bring back under 110 KB).
+      - name: Enforce widget bundle size budgets
+        run: |
+          set -e
+          loader_size=$(wc -c < widget/dist/widget.js)
+          echo "widget.js = ${loader_size} bytes (budget: 4096)"
+          if [ "${loader_size}" -gt 4096 ]; then
+            echo "FAIL: widget.js exceeds 4096-byte budget" >&2
+            exit 1
+          fi
+          bundle_file=$(ls widget/dist/bundle-*.js | head -1)
+          bundle_size=$(wc -c < "${bundle_file}")
+          echo "$(basename ${bundle_file}) = ${bundle_size} bytes (budget: 163840)"
+          if [ "${bundle_size}" -gt 163840 ]; then
+            echo "FAIL: ${bundle_file} exceeds 163840-byte (160 KB) budget" >&2
+            exit 1
+          fi
+
+      - name: docker compose build
+        run: docker compose build
+
+      - name: Upload widget dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: widget-dist
+          path: widget/dist/
+          retention-days: 1
+
+  smoke:
+    name: Smoke (docker compose up + /health)
+    runs-on: ubuntu-latest
+    needs: image_build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore widget dist
+        uses: actions/download-artifact@v4
+        with:
+          name: widget-dist
+          path: widget/dist/
+      - name: Run smoke
+        env:
+          SMOKE_TIMEOUT_SECONDS: "120"
+        run: |
+          cp .env.example .env
+          # Backend lifespan constructs genai.Client at startup which raises
+          # ValueError on an empty api_key. Smoke only hits /health so the
+          # key never has to be valid — but it must be non-empty. .env.example
+          # ships these empty. Rewriting in-place (instead of appending) avoids
+          # docker compose's version-dependent duplicate-key behaviour where
+          # an earlier empty value can shadow a later non-empty one.
+          # CI-only; do not propagate to prod.
+          sed -i 's|^GEMINI_API_KEY=$|GEMINI_API_KEY=ci-dummy-not-a-real-key|' .env
+          sed -i 's|^GROQ_API_KEY=$|GROQ_API_KEY=ci-dummy-not-a-real-key|' .env
+          # Show the relevant lines so a future failure is debuggable from
+          # the job log (values are clearly fake; no real secret exposure).
+          echo "--- .env after substitution (key-prefix only) ---"
+          grep -E '^(GEMINI|GROQ)_API_KEY=' .env || true
+          bash scripts/smoke_test.sh
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Eval gates — parallel, each writes one record to
+  # artifacts/ci-gate-results.jsonl (uploaded for the summary job).
+  # ─────────────────────────────────────────────────────────────────────
+  classifier:
+    name: Eval — classifier (FR-023, Owner C handoff)
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync --project modelserver
+      # Owner C's runner prints `GATE=... STATUS=... OBSERVED=... THRESHOLD=...`
+      # to stdout; the wrapper captures it and emits the contract jsonl record.
+      - name: Run classifier gate
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          uv run --project modelserver python -m evals.classifier.run | tee artifacts/classifier.stdout
+          python scripts/jsonl_from_gate_line.py classifier artifacts/classifier.stdout artifacts/ci-gate-results.jsonl
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py classifier artifacts/ci-gate-results.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-classifier
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: warn
+
+  tool_selection:
+    name: Eval — agent tool selection (FR-024)
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Prepare artifact dir
+        run: mkdir -p artifacts
+      - name: Run tool_selection gate
+        run: python -m evals.tool_selection.run
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py agent_tool_selection artifacts/ci-gate-results.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-tool_selection
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: warn
+
+  rag:
+    name: Eval — RAG (FR-025)
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv pyyaml
+      - name: Sync backend env (for retrieval pytest)
+        working-directory: backend
+        run: uv sync --locked
+      - name: Run retrieval/ingestion/isolation unit tests (Owner C handoff)
+        working-directory: backend
+        run: uv run pytest tests/test_ingestion.py tests/test_retrieval.py tests/test_chunk_isolation.py -v
+      - name: Prepare artifact dir
+        run: mkdir -p artifacts
+      # Run from repo root with plain python — evals/rag/run.py is pure stdlib
+      # + pyyaml (via evals.common.thresholds). Running under
+      # `uv run --directory backend` changed Python CWD to backend/ so the
+      # gate_report jsonl ended up at backend/artifacts/, invisible to the
+      # upload step which resolves paths from $GITHUB_WORKSPACE.
+      - name: Run RAG gate
+        run: python -m evals.rag.run
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py rag artifacts/ci-gate-results.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-rag
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: warn
+
+  redteam_cross_tenant:
+    name: Eval — cross-tenant red team (FR-026, MUST be 1.0, Owner C handoff)
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync --project guardrails
+      - name: Run cross-tenant red-team gate
+        run: |
+          mkdir -p artifacts
+          uv run --project guardrails python -m evals.redteam_cross_tenant.run --output artifacts/ci-gate-results.jsonl
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py redteam_cross_tenant artifacts/ci-gate-results.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-redteam
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: warn
+
+  redaction:
+    name: Eval — redaction (FR-027, MUST be 1.0, Owner C handoff)
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync --project guardrails
+      - name: Run redaction gate
+        run: |
+          mkdir -p artifacts
+          uv run --project guardrails python -m evals.redaction.run --output artifacts/ci-gate-results.jsonl
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py redaction artifacts/ci-gate-results.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-redaction
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: warn
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Unit tests — fast, no database required
+  # ─────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install uv
         run: pip install uv
-
       - name: Install backend dependencies
         run: uv sync --frozen
         working-directory: backend
-
       - name: Run unit tests
         run: uv run pytest tests/ -v --tb=short
         working-directory: backend
         env:
           JWT_SECRET: ci-test-secret-not-real
-          # No DATABASE_URL — unit tests mock the DB via dependency overrides.
 
-  # -------------------------------------------------------------------------
-  # Job 4: isolation evals — gate; requires live Postgres with migrations
-  # -------------------------------------------------------------------------
+  # ─────────────────────────────────────────────────────────────────────
+  # Isolation evals — gate; requires live Postgres with migrations
+  # ─────────────────────────────────────────────────────────────────────
   isolation-evals:
     name: Isolation Evals (Gate)
     runs-on: ubuntu-latest
+    needs: validate_thresholds
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -59,29 +327,22 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install uv
         run: pip install uv
-
       - name: Install backend dependencies
         run: uv sync --frozen
         working-directory: backend
-
       - name: Install PostgreSQL client
         run: sudo apt-get install -y postgresql-client
-
       - name: Create albert_app role (non-superuser)
         run: |
           psql postgresql://postgres:postgres@localhost:5432/albert \
             -f postgres/init/01_create_app_role.sql
-
       - name: Run migrations (as postgres superuser)
         run: uv run alembic upgrade head
         working-directory: backend
@@ -89,14 +350,33 @@ jobs:
           DATABASE_MIGRATE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
           DATABASE_URL: postgresql+asyncpg://albert_app:albert_app_pass@localhost:5432/albert
           JWT_SECRET: ci-test-secret-not-real
-
       - name: Run isolation evals
-        # Fail the entire CI run if any isolation eval fails.
-        # These are the tenant-isolation gates — a failure here means
-        # data from one tenant is readable by another, or an erasure is incomplete.
         run: uv run pytest ../evals/isolation/ -v --tb=short
         working-directory: backend
         env:
           DATABASE_URL: postgresql+asyncpg://albert_app:albert_app_pass@localhost:5432/albert
           DATABASE_MIGRATE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
           JWT_SECRET: ci-test-secret-not-real
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Summary — always runs, fails the build if any gate failed.
+  # ─────────────────────────────────────────────────────────────────────
+  summary:
+    name: CI summary
+    runs-on: ubuntu-latest
+    needs: [classifier, tool_selection, rag, redteam_cross_tenant, redaction, unit-tests, isolation-evals]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Download all gate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: collected-artifacts/
+      - name: Render summary
+        env:
+          GATE_RUN_START: ${{ github.event.repository.pushed_at }}
+        run: python scripts/ci_summary.py

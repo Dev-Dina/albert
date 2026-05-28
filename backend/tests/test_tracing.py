@@ -19,3 +19,5 @@ def test_sensitive_attribute_names_are_rejected() -> None:
     assert not tracing.is_safe_span_attribute("service_auth_token", "secret")
     assert not tracing.is_safe_span_attribute("raw_user_message", "alice@example.com")
     assert not tracing.is_safe_span_attribute("cookie", "session=secret")
+    assert not tracing.is_safe_span_attribute("safe_note", "api_key=sk-fake000000000000")
+    assert tracing.is_safe_span_attribute("text_length", 42)

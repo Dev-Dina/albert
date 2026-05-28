@@ -19,8 +19,9 @@ Central status tracker for Models, Security & Guardrails.
 | Phase 4E | LLM zero-shot baseline | PASS |
 | Phase 5 | Production model decision | PASS |
 | Phase 6 | Guardrails + red-team suite | PASS |
-| Phase 7 | Redaction hardening / credit-card add-on | PENDING |
-| Phase 8 | CI handoff | PENDING |
+| Phase 7A | Redaction hardening spec-readiness | PASS |
+| Phase 7B | Redaction hardening implementation | PASS |
+| Phase 8 | CI handoff | PASS |
 
 ## Key Artifacts
 
@@ -37,8 +38,10 @@ Central status tracker for Models, Security & Guardrails.
 | Model card | `modelserver/MODEL_CARD.md` |
 | Classifier eval runner | `evals/classifier/run.py` |
 | Secret inventory | `docs/SECRETS.md` |
+| CI handoff | `docs/OWNER_C_CI_HANDOFF.md` |
 | Red-team fixtures | `evals/redteam_cross_tenant/fixtures/redteam_cases.jsonl` |
 | Red-team runner | `evals/redteam_cross_tenant/run.py` |
+| Redaction runner | `evals/redaction/run.py` |
 
 ## Production Model Choice
 
@@ -82,9 +85,9 @@ LLM zero-shot notes:
 
 ## Open Risks
 
-- CI is not wired yet.
-- Redaction hardening remains Phase 7, especially broader credit-card coverage
-  and exception/access-log leak handling.
+- CI workflow wiring remains Owner D work.
+- Full uvicorn/access-log configuration remains an Owner A/D/ops handoff if the
+  deployment later enables raw request-body access logging.
 - Endpoint migration to target names requires Owner B/D coordination.
 
 ## Guardrails / Red-Team
@@ -97,11 +100,39 @@ LLM zero-shot notes:
   secret extraction, and attempts to disable guardrails.
 - Tenant rails can only narrow behavior with allowed/blocked topics; they cannot
   weaken platform DENY.
-- Redaction covers fake API keys/tokens, emails, phones, token-like strings, and
-  credit-card-like strings in the guardrails sidecar.
+- Redaction covers fake/provider API keys, Bearer/service tokens, JWT-like
+  strings, emails, phones, generic token-like strings, and credit-card-like
+  strings in the guardrails sidecar.
 - Red-team fixture path: `evals/redteam_cross_tenant/fixtures/redteam_cases.jsonl`.
 - Red-team runner command: `uv run --project guardrails python -m evals.redteam_cross_tenant.run`.
 - Pass threshold: root `eval_thresholds.yaml` `redteam.required_pass_rate = 1.00`.
+
+## Redaction Hardening
+
+- Phase 7A spec-readiness: PASS.
+- Phase 7B implementation: PASS.
+- Eval strategy: separate `evals/redaction/run.py` gate, not folded into
+  `redteam_cross_tenant`.
+- Runner command: `uv run --project guardrails python -m evals.redaction.run`.
+- Fixture path: `evals/redaction/fixtures/redaction_cases.jsonl`.
+- Observed pass rate: `1.000000` against threshold `1.000000`.
+- Pass threshold: root `eval_thresholds.yaml`
+  `redaction.required_pass_rate = 1.00`.
+- Required redaction types: fake API keys; Gemini/OpenAI/Groq-style API keys;
+  Bearer tokens; service auth tokens; JWT-like strings; emails; phones;
+  credit-card-like strings; and generic long token-like strings.
+- Required leak surfaces: backend logs, guardrails logs, modelserver logs,
+  exception tracebacks, HTTP error responses where applicable, OpenTelemetry
+  span attributes, access logs, guardrails responses, eval runner output, and
+  generated CI artifacts.
+- Generated artifact rule: root `artifacts/` is local/CI output and should not
+  be committed; eval runners print to stdout by default and write JSON only with
+  optional `--output`; `training/intent_classifier/artifacts/` and
+  `modelserver/artifacts/` remain model artifacts and must not be removed or
+  ignored by Phase 7 work.
+- Access-log decision: application code does not log raw request bodies; Phase
+  7B keeps eval runners stdout-only by default and sanitizes app log filters.
+  Runtime access-log policy should remain sanitized/no-body if configured later.
 
 ## Tracing
 
@@ -137,4 +168,5 @@ LLM zero-shot notes:
 
 ## Next Action
 
-Phase 7: redaction hardening / credit-card add-on.
+Owner C is complete. Next action is Owner D CI workflow wiring using
+`docs/OWNER_C_CI_HANDOFF.md`.

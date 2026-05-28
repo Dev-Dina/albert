@@ -1,15 +1,18 @@
 import json
 import logging
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.embedder import EmbedderAdapter
 from app.adapters.llm import LLMAdapter
 from app.adapters.reranker import RerankerAdapter
 from app.core.config import settings
+from app.cost import record_cost_event
 from app.tools.capture_lead import CAPTURE_LEAD_TOOL, capture_lead
 from app.tools.escalate import ESCALATE_TOOL, escalate
 from app.tools.rag_search import RAG_SEARCH_TOOL, rag_search
@@ -41,6 +44,7 @@ async def run_agent(
     user_message: str,
     llm: LLMAdapter,
     db: AsyncSession | None = None,
+    redis: Redis | None = None,
     embedder: EmbedderAdapter | None = None,
     reranker: RerankerAdapter | None = None,
     persona: str = "Albert",
@@ -83,6 +87,20 @@ async def run_agent(
             max_tokens=settings.agent_max_tokens_per_turn,
         )
 
+        if db is not None:
+            try:
+                await record_cost_event(
+                    db=db,
+                    tenant_id=uuid.UUID(tenant_id),
+                    call_type="llm",
+                    model=settings.gemini_model,
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    conversation_id=uuid.UUID(conversation_id) if conversation_id else None,
+                )
+            except Exception:
+                logger.warning("agent.cost_record_failed tenant=%s", tenant_id)
+
         choice = response.choices[0]
 
         # Model returned a plain text reply — done.
@@ -111,7 +129,9 @@ async def run_agent(
                     tool_name=tool_name,
                     tool_args=tool_args,
                     tenant_id=tenant_id,
+                    conversation_id=conversation_id,
                     db=db,
+                    redis=redis,
                     embedder=embedder,
                     reranker=reranker,
                 )
@@ -153,7 +173,9 @@ async def _dispatch_tool(
     tool_name: str,
     tool_args: dict,
     tenant_id: str,
+    conversation_id: str | None = None,
     db: AsyncSession | None = None,
+    redis: Redis | None = None,
     embedder: EmbedderAdapter | None = None,
     reranker: RerankerAdapter | None = None,
 ) -> object:
@@ -171,7 +193,13 @@ async def _dispatch_tool(
         )
 
     if tool_name == "capture_lead":
-        return await capture_lead(tenant_id=tenant_id, **tool_args)
+        return await capture_lead(
+            tenant_id=tenant_id,
+            db=db,
+            redis=redis,
+            conversation_id=conversation_id,
+            **tool_args,
+        )
 
     if tool_name == "escalate":
         return await escalate(
@@ -179,6 +207,7 @@ async def _dispatch_tool(
             conversation_id=tool_args.get("conversation_id", "unknown"),
             reason=tool_args["reason"],
             summary=tool_args.get("summary", ""),
+            db=db,
         )
 
     logger.error("agent.unknown_tool tool=%s", tool_name)

@@ -48,11 +48,15 @@ Tasks are grouped by the seven Owner C workstreams (each notes its phase). Check
 - [ ] **T6.2** Redaction fixtures under `evals/redaction/fixtures/*.jsonl` using `contracts/redteam-eval.md` schema. Required kinds: fake API keys/tokens, emails, phones, token-like strings, credit-card-like strings.
 - [ ] **T6.3** `evals/redteam_cross_tenant/run.py`; command: `uv run python -m evals.redteam_cross_tenant.run`. **Acceptance:** pass rate = 1.00; any allowed attack fails.
 - [ ] **T6.4** `evals/redaction/run.py`; command: `uv run python -m evals.redaction.run`. **Acceptance:** leak rate = 0 across responses, logs, traces, memory, and error outputs; pass rate = 1.00.
-- [ ] **T6.5** Make each `evals/<gate>/run.py` emit `GATE=… STATUS=… OBSERVED=… THRESHOLD=…`, exit 0/1/2, append to `artifacts/ci-gate-results.json` jsonl (per `001` contract).
+- [ ] **T6.5** Make each `evals/<gate>/run.py` emit `GATE=… STATUS=… OBSERVED=… THRESHOLD=…`, exit 0/1/2, and print to stdout by default. CI may pass `--output artifacts/ci-gate-results.json` to append JSONL (per `001` contract); local runs must not create root artifacts unless requested.
 - [ ] **T6.6** Confirm canonical root `eval_thresholds.yaml` Owner C keys; `uv run python -m evals.common.validate_thresholds` keeps redteam/redaction = 1.00. `evals/eval_thresholds.yaml` is legacy RAG/router data and must not be used for Owner C gates.
 - [ ] **T6.7** No-heavy-dep CI assertion: serving lockfiles free of torch/transformers.
 - [ ] **T6.8** Owner D wires gates into `.github/workflows/ci.yml` (protected — coordinate, do not edit unilaterally). **Acceptance:** gates run on PR/main; red on any safety regression.
 
-## Workstream 7 — Served-model hardening if needed — Phase 7 (conditional)
-- [ ] **T7.1** If Phase 4 selects DL/ONNX for serving, harden the ONNX artifact/runtime path (no torch/transformers in image).
-- [ ] **T7.2** Confirm `MODEL_CARD.md` served-choice rationale still references the completed Phase 4 classical ML vs DL/ONNX vs LLM zero-shot comparison.
+## Workstream 7 — Redaction hardening — Phase 7 (planned)
+- [ ] **T7.1** Expand redaction detector coverage for fake API keys; Gemini/OpenAI/Groq-style API keys; Bearer tokens; service auth tokens; JWT-like strings; emails; phones; credit-card-like strings; and generic long token-like strings.
+- [ ] **T7.2** Apply/prove redaction-before-output for backend logs, guardrails logs, modelserver logs, exception tracebacks, HTTP error responses where applicable, OpenTelemetry span attributes, access logs, guardrails responses, eval runner output, and generated CI artifacts.
+- [ ] **T7.3** Decide and implement access-log handling: disable raw access logs, sanitize them, or prove they cannot contain raw user text, prompts, Authorization headers, cookies, API keys, service tokens, or PII.
+- [ ] **T7.4** Add `evals/redaction/fixtures/*.jsonl` and `evals/redaction/run.py`; command: `uv run python -m evals.redaction.run`. **Acceptance:** root `eval_thresholds.yaml` `redaction.required_pass_rate = 1.00`; exit 0/1/2; no root artifacts unless `--output` is passed.
+- [ ] **T7.5** Document generated artifact behavior: root `artifacts/` is local/CI output and should not be committed; `training/intent_classifier/artifacts/` and `modelserver/artifacts/` are model artifacts and must not be deleted/ignored by Phase 7.
+- [ ] **T7.6** Add focused tests proving no raw planted values leak through logs/responses/traces/errors for the supported redaction kinds.

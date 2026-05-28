@@ -13,6 +13,8 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
+from app.redaction import redact
+
 FORBIDDEN_ATTRIBUTE_NAMES = {
     "authorization",
     "cookie",
@@ -36,9 +38,12 @@ def _env_bool(name: str, default: str = "false") -> bool:
 
 
 def is_safe_span_attribute(name: str, value: Any) -> bool:
-    del value
     normalized = name.lower().replace("-", "_")
-    return not any(forbidden in normalized for forbidden in FORBIDDEN_ATTRIBUTE_NAMES)
+    if any(forbidden in normalized for forbidden in FORBIDDEN_ATTRIBUTE_NAMES):
+        return False
+    if value is None or isinstance(value, (bool, int, float)):
+        return True
+    return redact(str(value)).total == 0
 
 
 def safe_set_span_attribute(name: str, value: Any) -> None:

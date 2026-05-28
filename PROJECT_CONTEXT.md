@@ -206,7 +206,7 @@ The API calls the NeMo guardrails sidecar over HTTP with a service credential. I
 | NO `transformers` | Same reason |
 | Image size | Must be under 500MB |
 | Serving runtime | `onnxruntime` for the DL model, `scikit-learn`+`joblib` for classical |
-| Boot guard | Server refuses to start if the artifact SHA-256 ≠ the pinned hash in `model_card.md` |
+| SHA-256 guard | On artifact SHA-256 ≠ the pinned hash in `MODEL_CARD.md`, the server fails closed: `/classify` returns 503 and the mismatched model is never used (the service may still boot to expose health/error diagnostics) |
 | Training | Happens in `training/` notebooks / Colab only — never in a container |
 
 Training is ephemeral (GPU, torch, Colab). Serving is lean (onnxruntime, sklearn). They never share a container.
@@ -222,10 +222,10 @@ Training is ephemeral (GPU, torch, Colab). Serving is lean (onnxruntime, sklearn
 | Postgres | All rows where `tenant_id = X` |
 | pgvector | All embedding chunks where `tenant_id = X` |
 | MinIO | All blobs under Tenant X's namespace |
-| Redis | All sessions for Tenant X |
-| Traces / logs | Purge or redact Tenant X references |
+| Redis | All sessions AND conversation memory for Tenant X (`session:` + `conv:` keys) |
+| Traces / logs | Redacted at write time — no raw tenant data is stored, so there is nothing to purge (ADR-013) |
 
-"The row is deleted but the embeddings are still searchable" is a compliance failure and a leak. The erasure test asserts all five stores.
+"The row is deleted but the embeddings are still searchable" is a compliance failure and a leak. The erasure test asserts Postgres, pgvector, MinIO, and Redis; traces carry no raw tenant data by design (ADR-013).
 
 The erasure path is **write/delete-only** — no read access. The Tenant Manager can destroy without ever reading. Every erasure is audit-logged.
 

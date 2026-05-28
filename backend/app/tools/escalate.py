@@ -1,6 +1,11 @@
 import logging
+import uuid
 
 from pydantic import BaseModel, field_validator
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.conversation import Conversation
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +59,12 @@ class EscalateArgs(BaseModel):
 
 
 async def escalate(
-    *, tenant_id: str, conversation_id: str, reason: str, summary: str = ""
+    *, tenant_id: str, conversation_id: str, reason: str, summary: str = "", db: AsyncSession | None = None
 ) -> dict:
     """Flag the conversation for human handoff, scoped to tenant_id.
 
-    Writes to conversation_flags table — stub until Owner A delivers
-    the Conversation model and get_current_tenant dependency.
-
-    tenant_id and conversation_id come from verified session context.
+    Sets conversation status to 'escalated'. tenant_id and conversation_id
+    come from verified session context — never from client input.
     """
     logger.info(
         "escalate tenant=%s conv=%s reason=%r", tenant_id, conversation_id, reason
@@ -69,15 +72,36 @@ async def escalate(
 
     EscalateArgs(reason=reason, summary=summary)
 
-    # TODO: replace with real repo write once Owner A delivers Conversation model:
-    # from app.repos.conversation_repo import conversation_repo
-    # flag = await conversation_repo.flag_for_escalation(
-    #     tenant_id=tenant_id,
-    #     conversation_id=conversation_id,
-    #     reason=args.reason,
-    #     summary=args.summary,
-    # )
-    # return {"ticket_id": str(flag.id), "status": "escalated"}
+    if db is None:
+        logger.warning("escalate called without db session — skipping write tenant=%s", tenant_id)
+        return {"ticket_id": None, "status": "no_db"}
 
-    logger.warning("escalate is a stub — no DB write performed tenant=%s", tenant_id)
-    return {"ticket_id": None, "status": "stub_no_write"}
+    try:
+        conv_uuid = uuid.UUID(conversation_id)
+        tenant_uuid = uuid.UUID(tenant_id)
+    except (ValueError, TypeError):
+        logger.warning("escalate invalid uuid tenant=%s conv=%s", tenant_id, conversation_id)
+        return {"ticket_id": None, "status": "invalid_id"}
+
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.id == conv_uuid,
+            Conversation.tenant_id == tenant_uuid,
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if conv is None:
+        # No existing conversation row — create one marked escalated.
+        conv = Conversation(
+            id=conv_uuid,
+            tenant_id=tenant_uuid,
+            session_id=conversation_id,
+            status="escalated",
+        )
+        db.add(conv)
+    else:
+        conv.status = "escalated"
+
+    await db.flush()
+    logger.info("escalate.persisted tenant=%s conv=%s", tenant_id, conversation_id)
+    return {"ticket_id": conversation_id, "status": "escalated"}
