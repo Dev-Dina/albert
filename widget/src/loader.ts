@@ -27,7 +27,17 @@ interface CurrentScriptHost {
     return;
   }
 
-  const src = new URL(`/widget/embed.html?widget_id=${id}`, window.location.origin);
+  // Iframe base = origin where this loader script itself was served from
+  // (the Albert backend), NOT the host page's origin. This is what makes
+  // cross-origin embedding work: the host can be on https://customer.com
+  // and the iframe still loads from https://albert.example/widget/embed.html.
+  // Falls back to window.location.origin only when currentScript has no src
+  // (e.g. same-origin demos / jsdom).
+  const scriptSrc = script.getAttribute("src");
+  const base = scriptSrc
+    ? new URL(scriptSrc, window.location.origin).origin
+    : window.location.origin;
+  const src = new URL(`/widget/embed.html?widget_id=${id}`, base);
   const iframe = doc.createElement("iframe");
   iframe.src = src.toString();
   iframe.title = "Albert chat";

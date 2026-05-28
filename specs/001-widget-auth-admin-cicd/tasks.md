@@ -160,27 +160,27 @@ Multi-service web app. Source roots:
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T062 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `GET /api/v1/admin/widgets` as Tenant A admin returns only Tenant A widgets; never Tenant B's (verified by seeding both tenants).
-- [ ] T063 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `PATCH /api/v1/admin/widgets/{id}` updates `theme` + `greeting` + `status`; subsequent `GET /widget/embed.html` reflects new values on next request.
-- [ ] T064 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `GET /api/v1/admin/widgets/{id}/embed-snippet` returns a single `<script>` line containing the loader URL and exact `data-widget-id` — no manual editing required.
-- [ ] T065 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `POST /api/v1/admin/allowed-origins` rejects (422) any of: wildcard origin (`https://*.x.com`), origin with path (`https://x.com/foo`), origin with query, origin with trailing slash, `http://example.com` (non-localhost http).
-- [ ] T066 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `PUT /api/v1/admin/guardrail-config` with a config that disables `pii_redaction` → 422 with body `{error: "floor_violation", key_path: "pii_redaction.enabled", attempted_value: false, floor_value: true}`.
-- [ ] T067 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `POST /api/v1/admin/signing-key/rotate` returns only `{version, created_at}`; raw key material is NOT in the response body and NOT in the log stream (assert via captured logs).
+- [X] T062 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `GET /api/v1/admin/widgets` as Tenant A admin returns only Tenant A widgets; never Tenant B's (verified by seeding both tenants).
+- [X] T063 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `PATCH /api/v1/admin/widgets/{id}` updates `theme` + `greeting` + `status`; subsequent `GET /widget/embed.html` reflects new values on next request.
+- [X] T064 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `GET /api/v1/admin/widgets/{id}/embed-snippet` returns a single `<script>` line containing the loader URL and exact `data-widget-id` — no manual editing required.
+- [X] T065 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `POST /api/v1/admin/allowed-origins` rejects (422) any of: wildcard origin (`https://*.x.com`), origin with path (`https://x.com/foo`), origin with query, origin with trailing slash, `http://example.com` (non-localhost http).
+- [X] T066 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `PUT /api/v1/admin/guardrail-config` with a config that disables `pii_redaction` → 422 with body `{error: "floor_violation", key_path: "pii_redaction.enabled", attempted_value: false, floor_value: true}`.
+- [X] T067 [P] [US3] Test in `backend/tests/test_widget_admin.py`: `POST /api/v1/admin/signing-key/rotate` returns only `{version, created_at}`; raw key material is NOT in the response body and NOT in the log stream (assert via captured logs).
 
 ### Implementation for User Story 3
 
-- [ ] T068 [US3] Extend `backend/app/services/widget_admin_service.py`: `list_widgets`, `create_widget`, `update_widget`, `embed_snippet`, `list_allowed_origins`, `add_allowed_origin` (calls origin validator), `delete_allowed_origin`, `get_guardrail_config`, `put_guardrail_config` (calls `guardrail_floor.enforce_floor`). All methods take `actor_user_id` and derive `tenant_id` from membership lookup — never from a body field.
-- [ ] T069 [US3] Implement route `backend/app/api/routes/admin_widgets.py` per `contracts/widget-admin.openapi.yaml`. Requires `current_user` with a `tenant_admin` membership for the inferred tenant. On a 4xx, returns 404 (not 403) when the resource exists but isn't owned (do not confirm existence).
-- [ ] T070 [P] [US3] Streamlit auth helper `admin/app/lib/auth.py`: login form, calls `POST /api/v1/auth/login`, stores `{token, expires_at}` in `st.session_state`, logout button. Token never persisted.
-- [ ] T071 [P] [US3] Backend client `admin/app/clients/backend_client.py`: thin httpx wrapper with `Authorization: Bearer …` injection and typed return shapes mirroring T025.
-- [ ] T072 [P] [US3] Streamlit entry `admin/app/main.py`: `st.set_page_config`, sidebar nav, redirect to login if no token.
-- [ ] T073 [P] [US3] Page `admin/app/pages/1_Widgets.py`: list, create, edit name/theme/greeting/status.
-- [ ] T074 [P] [US3] Page `admin/app/pages/2_Allowed_Origins.py`: list, add (form validation mirroring T065), delete. When the list is empty, render an inline warning at the top of the page that names the consequence ("No widget will load anywhere until at least one origin is added — the token-exchange endpoint rejects every request") and links to the Widgets page so the admin can see which widgets are currently un-embeddable. Covers spec edge case "Tenant with zero allowed origins". The Widgets page (T073) MUST mirror this state by tagging each widget with a "no allowed origins" badge when the tenant allowlist is empty.
-- [ ] T075 [P] [US3] Page `admin/app/pages/3_Guardrails.py`: render current config, accept edits, render server-side floor-violation message inline on 422.
-- [ ] T076 [P] [US3] Page `admin/app/pages/4_Embed_Snippet.py`: per-widget snippet display + `st.code(..., language="html")` for copy, "Copy to clipboard" via `st.components.v1.html` shim.
-- [ ] T077 [P] [US3] Page `admin/app/pages/5_Signing_Key.py`: shows current version + created_at; "Rotate" button behind a confirmation modal that names the consequence ("will sign every visitor out of every widget"). Calls `POST /api/v1/admin/signing-key/rotate`.
-- [ ] T078 [P] [US3] Streamlit-side unit tests `admin/tests/test_backend_client.py`: mock httpx; assert Authorization header injection, 401 surfaced as a typed exception.
-- [ ] T079 [US3] Verify `admin/Dockerfile` is lean: no `torch`, `transformers`, or `playwright`. `docker compose up admin` healthcheck green.
+- [X] T068 [US3] Extend `backend/app/services/widget_admin_service.py`: `list_widgets`, `create_widget`, `update_widget`, `embed_snippet`, `list_allowed_origins`, `add_allowed_origin` (calls origin validator), `delete_allowed_origin`, `get_guardrail_config`, `put_guardrail_config` (calls `guardrail_floor.enforce_floor`). All methods take `actor_user_id` and derive `tenant_id` from membership lookup — never from a body field.
+- [X] T069 [US3] Implement route `backend/app/api/routes/admin_widgets.py` per `contracts/widget-admin.openapi.yaml`. Requires `current_user` with a `tenant_admin` membership for the inferred tenant. On a 4xx, returns 404 (not 403) when the resource exists but isn't owned (do not confirm existence).
+- [X] T070 [P] [US3] Streamlit auth helper `admin/app/lib/auth.py`: login form, calls `POST /api/v1/auth/login`, stores `{token, expires_at}` in `st.session_state`, logout button. Token never persisted.
+- [X] T071 [P] [US3] Backend client `admin/app/clients/backend_client.py`: thin httpx wrapper with `Authorization: Bearer …` injection and typed return shapes mirroring T025.
+- [X] T072 [P] [US3] Streamlit entry `admin/app/main.py`: `st.set_page_config`, sidebar nav, redirect to login if no token.
+- [X] T073 [P] [US3] Page `admin/app/pages/1_Widgets.py`: list, create, edit name/theme/greeting/status.
+- [X] T074 [P] [US3] Page `admin/app/pages/2_Allowed_Origins.py`: list, add (form validation mirroring T065), delete. When the list is empty, render an inline warning at the top of the page that names the consequence ("No widget will load anywhere until at least one origin is added — the token-exchange endpoint rejects every request") and links to the Widgets page so the admin can see which widgets are currently un-embeddable. Covers spec edge case "Tenant with zero allowed origins". The Widgets page (T073) MUST mirror this state by tagging each widget with a "no allowed origins" badge when the tenant allowlist is empty.
+- [X] T075 [P] [US3] Page `admin/app/pages/3_Guardrails.py`: render current config, accept edits, render server-side floor-violation message inline on 422.
+- [X] T076 [P] [US3] Page `admin/app/pages/4_Embed_Snippet.py`: per-widget snippet display + `st.code(..., language="html")` for copy, "Copy to clipboard" via `st.components.v1.html` shim.
+- [X] T077 [P] [US3] Page `admin/app/pages/5_Signing_Key.py`: shows current version + created_at; "Rotate" button behind a confirmation modal that names the consequence ("will sign every visitor out of every widget"). Calls `POST /api/v1/admin/signing-key/rotate`.
+- [X] T078 [P] [US3] Streamlit-side unit tests `admin/tests/test_backend_client.py`: mock httpx; assert Authorization header injection, 401 surfaced as a typed exception.
+- [X] T079 [US3] Verify `admin/Dockerfile` is lean: no `torch`, `transformers`, or `playwright`. `docker compose up admin` healthcheck green.
 
 **Checkpoint**: A tenant admin can do the full quickstart steps 1–9 without engineer help. SC-001 demonstrably hits ≤ 10 minutes.
 

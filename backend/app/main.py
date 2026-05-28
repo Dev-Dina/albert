@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.middleware.widget_cors import WidgetCorsMiddleware
+from app.api.routes.admin_widgets import router as admin_widgets_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.health import router as health_router
@@ -30,5 +31,6 @@ app.include_router(auth_router)
 app.include_router(widget_session_router)
 app.include_router(widget_chat_router)
 app.include_router(widget_loader_router)
+app.include_router(admin_widgets_router)
 app.include_router(tenancy_router)
 app.include_router(chat_router)
