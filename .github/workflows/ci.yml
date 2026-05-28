@@ -151,12 +151,15 @@ jobs:
           mkdir -p artifacts
           uv run --project modelserver python -m evals.classifier.run | tee artifacts/classifier.stdout
           python scripts/jsonl_from_gate_line.py classifier artifacts/classifier.stdout artifacts/ci-gate-results.jsonl
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py classifier artifacts/ci-gate-results.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ci-gate-classifier
           path: artifacts/ci-gate-results.jsonl
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   tool_selection:
     name: Eval — agent tool selection (FR-024)
@@ -168,39 +171,54 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyyaml
-      - run: python -m evals.tool_selection.run
+      - name: Prepare artifact dir
+        run: mkdir -p artifacts
+      - name: Run tool_selection gate
+        run: python -m evals.tool_selection.run
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py agent_tool_selection artifacts/ci-gate-results.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ci-gate-tool_selection
           path: artifacts/ci-gate-results.jsonl
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   rag:
     name: Eval — RAG (FR-025)
     runs-on: ubuntu-latest
     needs: smoke
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install uv
-      - run: uv sync --locked
+      - run: pip install uv pyyaml
+      - name: Sync backend env (for retrieval pytest)
+        working-directory: backend
+        run: uv sync --locked
       - name: Run retrieval/ingestion/isolation unit tests (Owner C handoff)
+        working-directory: backend
         run: uv run pytest tests/test_ingestion.py tests/test_retrieval.py tests/test_chunk_isolation.py -v
-      - name: RAG gate runner
-        working-directory: ${{ github.workspace }}
-        run: PYTHONPATH=.:backend uv run --directory backend python -m evals.rag.run
+      - name: Prepare artifact dir
+        run: mkdir -p artifacts
+      # Run from repo root with plain python — evals/rag/run.py is pure stdlib
+      # + pyyaml (via evals.common.thresholds). Running under
+      # `uv run --directory backend` changed Python CWD to backend/ so the
+      # gate_report jsonl ended up at backend/artifacts/, invisible to the
+      # upload step which resolves paths from $GITHUB_WORKSPACE.
+      - name: Run RAG gate
+        run: python -m evals.rag.run
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py rag artifacts/ci-gate-results.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ci-gate-rag
           path: artifacts/ci-gate-results.jsonl
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   redteam_cross_tenant:
     name: Eval — cross-tenant red team (FR-026, MUST be 1.0, Owner C handoff)
@@ -217,12 +235,15 @@ jobs:
         run: |
           mkdir -p artifacts
           uv run --project guardrails python -m evals.redteam_cross_tenant.run --output artifacts/ci-gate-results.jsonl
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py redteam_cross_tenant artifacts/ci-gate-results.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ci-gate-redteam
           path: artifacts/ci-gate-results.jsonl
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   redaction:
     name: Eval — redaction (FR-027, MUST be 1.0, Owner C handoff)
@@ -239,12 +260,15 @@ jobs:
         run: |
           mkdir -p artifacts
           uv run --project guardrails python -m evals.redaction.run --output artifacts/ci-gate-results.jsonl
+      - name: Backstop — record runner crash if no result was written
+        if: failure()
+        run: python scripts/emit_error_record.py redaction artifacts/ci-gate-results.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ci-gate-redaction
           path: artifacts/ci-gate-results.jsonl
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   # ─────────────────────────────────────────────────────────────────────
   # Summary — always runs, fails the build if any gate failed.
