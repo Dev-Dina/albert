@@ -126,16 +126,19 @@ jobs:
           SMOKE_TIMEOUT_SECONDS: "120"
         run: |
           cp .env.example .env
-          # Backend lifespan constructs a genai.Client at startup which
-          # raises ValueError on an empty api_key. Smoke only hits /health
-          # so the key never has to be valid — but it must be a non-empty
-          # string. The same applies to other model-provider keys that
-          # ship empty in .env.example. CI-only; do not propagate to prod.
-          {
-            echo "GEMINI_API_KEY=ci-dummy-not-a-real-key"
-            echo "GROQ_API_KEY=ci-dummy-not-a-real-key"
-            echo "COHERE_API_KEY=ci-dummy-not-a-real-key"
-          } >> .env
+          # Backend lifespan constructs genai.Client at startup which raises
+          # ValueError on an empty api_key. Smoke only hits /health so the
+          # key never has to be valid — but it must be non-empty. .env.example
+          # ships these empty. Rewriting in-place (instead of appending) avoids
+          # docker compose's version-dependent duplicate-key behaviour where
+          # an earlier empty value can shadow a later non-empty one.
+          # CI-only; do not propagate to prod.
+          sed -i 's|^GEMINI_API_KEY=$|GEMINI_API_KEY=ci-dummy-not-a-real-key|' .env
+          sed -i 's|^GROQ_API_KEY=$|GROQ_API_KEY=ci-dummy-not-a-real-key|' .env
+          # Show the relevant lines so a future failure is debuggable from
+          # the job log (values are clearly fake; no real secret exposure).
+          echo "--- .env after substitution (key-prefix only) ---"
+          grep -E '^(GEMINI|GROQ)_API_KEY=' .env || true
           bash scripts/smoke_test.sh
 
   # ─────────────────────────────────────────────────────────────────────
