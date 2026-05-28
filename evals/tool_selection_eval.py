@@ -13,7 +13,7 @@ import json
 import sys
 from pathlib import Path
 
-import yaml
+from evals.common.thresholds import get as get_threshold
 
 # ---------------------------------------------------------------------------
 # Keyword-based tool selector (deterministic, no LLM needed for offline eval)
@@ -47,11 +47,10 @@ def _predict_tool(message: str) -> str | None:
 # Eval runner
 # ---------------------------------------------------------------------------
 
-def run_eval(golden_path: Path, thresholds_path: Path) -> int:
+def run_eval(golden_path: Path) -> int:
     examples = [json.loads(line) for line in golden_path.read_text().splitlines() if line.strip()]
 
-    thresholds = yaml.safe_load(thresholds_path.read_text())
-    threshold = float(thresholds.get("tool_selection_accuracy", 0.8))
+    threshold = float(get_threshold("agent_tool_selection", "accuracy_min"))
 
     correct = 0
     total = len(examples)
@@ -82,23 +81,15 @@ def run_eval(golden_path: Path, thresholds_path: Path) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tool-selection eval harness")
     parser.add_argument("--golden", default="evals/tool_selection.jsonl", help="Path to golden JSONL")
-    parser.add_argument(
-        "--thresholds", default="evals/eval_thresholds.yaml", help="Path to thresholds YAML"
-    )
     args = parser.parse_args()
 
     golden_path = Path(args.golden)
-    thresholds_path = Path(args.thresholds)
 
     if not golden_path.exists():
         print(f"ERROR: golden file not found: {golden_path}", file=sys.stderr)
         sys.exit(1)
 
-    if not thresholds_path.exists():
-        print(f"ERROR: thresholds file not found: {thresholds_path}", file=sys.stderr)
-        sys.exit(1)
-
-    sys.exit(run_eval(golden_path, thresholds_path))
+    sys.exit(run_eval(golden_path))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+{"query": "what are the store hours", "ground_truth_chunk_ids": ["chunk-hours-1"], "retrieved_ids": ["chunk-hours-1", "chunk-locations-2", "chunk-faq-9", "chunk-other", "chunk-other-2"]}
+{"query": "shipping policy", "ground_truth_chunk_ids": ["chunk-shipping-3"], "retrieved_ids": ["chunk-faq-1", "chunk-shipping-3", "chunk-returns-2", "chunk-other", "chunk-other-2"]}
+{"query": "return policy", "ground_truth_chunk_ids": ["chunk-returns-1"], "retrieved_ids": ["chunk-returns-1", "chunk-shipping-1", "chunk-other", "chunk-other-2", "chunk-other-3"]}
+{"query": "how to contact sales", "ground_truth_chunk_ids": ["chunk-contact-1"], "retrieved_ids": ["chunk-faq-7", "chunk-faq-8", "chunk-contact-1", "chunk-other", "chunk-other-2"]}
+{"query": "warranty terms", "ground_truth_chunk_ids": ["chunk-warranty-1"], "retrieved_ids": ["chunk-warranty-1", "chunk-other", "chunk-other-2", "chunk-other-3", "chunk-other-4"]}

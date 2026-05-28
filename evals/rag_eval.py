@@ -20,11 +20,11 @@ import sys
 from pathlib import Path
 
 import httpx
-import yaml
+
+from evals.common.thresholds import get as get_threshold
 
 logger = logging.getLogger(__name__)
 
-_THRESHOLDS_FILE = Path(__file__).parent / "eval_thresholds.yaml"
 _GEMINI_JUDGE_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models"
     "/gemini-2.0-flash:generateContent?key={api_key}"
@@ -42,10 +42,15 @@ def load_golden(path: str) -> list[dict]:
 
 
 def load_thresholds() -> dict:
-    if not _THRESHOLDS_FILE.exists():
-        return {"hit_at_5": 0.6, "mrr": 0.5}
-    with open(_THRESHOLDS_FILE) as f:
-        return yaml.safe_load(f)
+    """Read the two RAG thresholds from the canonical eval_thresholds.yaml.
+
+    Returned shape stays flat (`hit_at_5`, `mrr`) for backwards-compat with
+    the rest of this module; the canonical file uses nested keys.
+    """
+    return {
+        "hit_at_5": float(get_threshold("rag", "hit_at_5_min")),
+        "mrr": float(get_threshold("rag", "mrr_min")),
+    }
 
 
 def compute_hit_at_k(retrieved_ids: list[str], ground_truth_ids: list[str], k: int = 5) -> float:
