@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.embedder import EmbedderAdapter, EmbedError
 from app.adapters.reranker import RerankerAdapter
+from app.core.config import settings
+from app.cost import record_cost_event
 from app.repos.chunk_repo import ChunkRepo
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,16 @@ async def retrieve(
 
     # Embed the query — raises EmbedError on API failure.
     query_embedding = await embedder.embed_one(query)
+    try:
+        await record_cost_event(
+            db=db,
+            tenant_id=uuid.UUID(tenant_id),
+            call_type="embedding",
+            model=settings.gemini_embedding_model,
+            input_tokens=1,
+        )
+    except Exception:
+        logger.warning("retrieval.cost_record_failed tenant=%s", tenant_id)
 
     # ANN search over child_chunks scoped to this tenant.
     children = await repo.search_children(

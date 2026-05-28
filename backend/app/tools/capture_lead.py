@@ -1,8 +1,16 @@
 import logging
+import uuid
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, field_validator
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.db.models.lead import Lead
 
 logger = logging.getLogger(__name__)
+
+_MAX_LEADS_PER_CONVERSATION = 3
 
 # Tool definition in the format the Groq/OpenAI API expects.
 # tenant_id is NOT in this schema — the backend injects it from the verified token.
@@ -60,31 +68,54 @@ class CaptureLeadArgs(BaseModel):
         return v.strip()
 
 
-async def capture_lead(*, tenant_id: str, name: str, contact: str, intent: str) -> dict:
+async def capture_lead(
+    *,
+    tenant_id: str,
+    name: str,
+    contact: str,
+    intent: str,
+    db: AsyncSession | None = None,
+    redis: Redis | None = None,
+    conversation_id: str | None = None,
+) -> dict:
     """Write a lead record scoped to tenant_id.
 
-    Rate-limiting and the real DB write are stubs until Owner A delivers
-    the Lead model and get_current_tenant dependency.
-
+    Rate-limited to _MAX_LEADS_PER_CONVERSATION writes per conversation via Redis
+    to prevent prompt-injection spam cannon attacks.
     tenant_id comes from verified session context — never from the LLM output.
     """
     logger.debug("capture_lead tenant=%s contact=%r", tenant_id, contact)
 
-    args = CaptureLeadArgs(name=name, contact=contact, intent=intent)
+    CaptureLeadArgs(name=name, contact=contact, intent=intent)
 
-    # TODO: rate-limit check per visitor/session before writing
-    # if await _rate_limit_exceeded(tenant_id=tenant_id):
-    #     return {"status": "rate_limited", "lead_id": None}
+    if redis is not None and conversation_id is not None:
+        rate_key = f"lead_rate:{tenant_id}:{conversation_id}"
+        try:
+            count = await redis.incr(rate_key)
+            if count == 1:
+                await redis.expire(rate_key, settings.redis_session_ttl)
+            if count > _MAX_LEADS_PER_CONVERSATION:
+                logger.warning(
+                    "capture_lead.rate_limited tenant=%s conv=%s count=%d",
+                    tenant_id, conversation_id, count,
+                )
+                return {"lead_id": None, "status": "rate_limited"}
+        except Exception:
+            logger.warning("capture_lead.rate_check_failed tenant=%s — allowing write", tenant_id)
 
-    # TODO: replace with real repo write once Owner A delivers Lead model:
-    # from app.repos.lead_repo import lead_repo
-    # lead = await lead_repo.create(
-    #     tenant_id=tenant_id,
-    #     name=args.name,
-    #     contact=args.contact,
-    #     intent=args.intent,
-    # )
-    # return {"lead_id": str(lead.id), "status": "captured"}
+    if db is None:
+        logger.warning("capture_lead called without db session — skipping write tenant=%s", tenant_id)
+        return {"lead_id": None, "status": "no_db"}
 
-    logger.warning("capture_lead is a stub — no DB write performed tenant=%s", tenant_id)
-    return {"lead_id": None, "status": "stub_no_write"}
+    lead = Lead(
+        id=uuid.uuid4(),
+        tenant_id=uuid.UUID(tenant_id),
+        name=name,
+        contact=contact,
+        intent=intent,
+        status="new",
+    )
+    db.add(lead)
+    await db.flush()
+    logger.info("capture_lead.persisted tenant=%s lead_id=%s", tenant_id, lead.id)
+    return {"lead_id": str(lead.id), "status": "captured"}
