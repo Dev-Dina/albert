@@ -21,6 +21,8 @@ down_revision: str | None = "0005_nullable_tenant_id"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+_POLICY_USING = "tenant_id = nullif(current_setting('app.current_tenant', true), '')::uuid"
+
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
@@ -83,11 +85,13 @@ def upgrade() -> None:
 
     op.execute(
         "CREATE POLICY tenant_isolation ON parent_chunks "
-        "USING (tenant_id = current_setting('app.current_tenant')::uuid)"
+        f"USING ({_POLICY_USING}) "
+        f"WITH CHECK ({_POLICY_USING})"
     )
     op.execute(
         "CREATE POLICY tenant_isolation ON child_chunks "
-        "USING (tenant_id = current_setting('app.current_tenant')::uuid)"
+        f"USING ({_POLICY_USING}) "
+        f"WITH CHECK ({_POLICY_USING})"
     )
 
 

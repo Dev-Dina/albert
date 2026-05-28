@@ -6,8 +6,7 @@ Every erasure is audit-logged with the actor's user_id.
 
 The five stores that must be emptied (per PROJECT_CONTEXT.md §11):
   1. Postgres     — all rows WHERE tenant_id = X
-  2. pgvector     — content_chunks embeddings WHERE tenant_id = X
-                    (handled by Postgres cascade, verified explicitly)
+  2. pgvector     — live child_chunks embeddings and parent_chunks WHERE tenant_id = X
   3. MinIO        — all blobs under the tenant namespace
   4. Redis        — sessions AND conversation memory for the tenant
   5. Traces/logs  — no-op by design: raw sensitive data is never written to
@@ -19,7 +18,7 @@ compliance failure.  The erasure test (test_erasure_total.py) asserts
 all five stores independently.
 
 Cross-owner hook signatures agreed on day one:
-  B exposes: no separate hook needed — pgvector lives in content_chunks (Postgres cascade);
+  B exposes: no separate hook needed — pgvector lives in child_chunks/parent_chunks;
              Redis keys are  session:{tenant_id}:*  and  conv:{tenant_id}:*
   C exposes: nothing — traces carry no raw tenant data by design (ADR-013)
   D owns:    the UI button that calls the /tenants/{id}/erase endpoint
@@ -43,20 +42,24 @@ from app.tenancy.audit import record_audit
 logger = logging.getLogger(__name__)
 
 # Tenant-owned tables in dependency order (children before parents where FK matters).
-# pgvector content_chunks is included here; the Postgres CASCADE on tenant_id also
-# handles it, but we delete explicitly so the erasure test can assert each table.
+# Live RAG data is child_chunks -> parent_chunks. Legacy content_chunks is retained
+# below as optional compatibility for databases that still have that table.
 _TENANT_TABLES = [
     "cost_events",
     "leads",
     "messages",
     "conversations",
-    "content_chunks",
+    "child_chunks",
+    "parent_chunks",
     "cms_pages",
     "widget_configs",
     "tenant_guardrail_configs",
 ]
+_OPTIONAL_LEGACY_TABLES = [
+    "content_chunks",
+]
 # Frozen copy used as an allowlist guard before any raw SQL table-name interpolation.
-_ALLOWED_TABLES: frozenset[str] = frozenset(_TENANT_TABLES)
+_ALLOWED_TABLES: frozenset[str] = frozenset(_TENANT_TABLES + _OPTIONAL_LEGACY_TABLES)
 
 
 async def erase_tenant(
@@ -84,18 +87,24 @@ async def erase_tenant(
     # 1. Postgres — delete from all tenant-owned tables
     # ------------------------------------------------------------------
     for table in _TENANT_TABLES:
-        assert table in _ALLOWED_TABLES, f"Unexpected table name: {table!r}"
-        result = await db.execute(
-            text(f"DELETE FROM {table} WHERE tenant_id = :tid RETURNING id"),
-            {"tid": str(tenant_id)},
-        )
-        count = len(result.fetchall())
+        count = await _delete_tenant_rows(db, table, tenant_id)
+        summary[f"postgres.{table}"] = count
+        logger.info("erasure postgres.%s tenant=%s rows=%d", table, tenant_id, count)
+
+    for table in _OPTIONAL_LEGACY_TABLES:
+        if not await _table_exists(db, table):
+            summary[f"postgres.{table}"] = 0
+            logger.info("erasure postgres.%s tenant=%s skipped=missing", table, tenant_id)
+            continue
+        count = await _delete_tenant_rows(db, table, tenant_id)
         summary[f"postgres.{table}"] = count
         logger.info("erasure postgres.%s tenant=%s rows=%d", table, tenant_id, count)
 
     # ------------------------------------------------------------------
-    # 2. pgvector — content_chunks is already covered above; log explicitly
+    # 2. pgvector — live RAG tables are already covered above; log explicitly
     # ------------------------------------------------------------------
+    summary["pgvector.child_chunks"] = summary.get("postgres.child_chunks", 0)
+    summary["pgvector.parent_chunks"] = summary.get("postgres.parent_chunks", 0)
     summary["pgvector.content_chunks"] = summary.get("postgres.content_chunks", 0)
 
     # ------------------------------------------------------------------
@@ -145,6 +154,26 @@ async def erase_tenant(
         summary,
     )
     return summary
+
+
+async def _delete_tenant_rows(db: AsyncSession, table: str, tenant_id: uuid.UUID) -> int:
+    """Delete tenant rows from an allowlisted table and return affected row count."""
+    assert table in _ALLOWED_TABLES, f"Unexpected table name: {table!r}"
+    result = await db.execute(
+        text(f"DELETE FROM {table} WHERE tenant_id = :tid RETURNING id"),
+        {"tid": str(tenant_id)},
+    )
+    return len(result.fetchall())
+
+
+async def _table_exists(db: AsyncSession, table: str) -> bool:
+    """Check optional compatibility tables without reading tenant content."""
+    assert table in _ALLOWED_TABLES, f"Unexpected table name: {table!r}"
+    result = await db.execute(
+        text("SELECT to_regclass(:table_name) IS NOT NULL"),
+        {"table_name": f"public.{table}"},
+    )
+    return bool(result.scalar_one())
 
 
 # ---------------------------------------------------------------------------
