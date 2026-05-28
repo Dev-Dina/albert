@@ -250,3 +250,30 @@ coverage without a risky cross-service refactor.
 tokens, JWT-like strings, emails, phones, credit-card-like strings, generic
 token-like strings, app logs, guardrails responses, custom trace attributes,
 eval stdout, and optional eval JSON. Phase 8 can wire the commands into CI.
+
+---
+
+## ADR-013: Tenant Erasure — Redis Coverage and Traces/Logs
+
+**Decision**: tenant erasure purges all tenant-scoped Redis keys
+(`session:{tenant_id}:*` AND `conv:{tenant_id}:*`) and treats traces/logs as a
+no-op because raw sensitive data is never written to them.
+
+**Context**: PROJECT_CONTEXT §11 lists "traces/logs" among the stores erasure
+must clear, and conversation memory is written to Redis as
+`conv:{tenant_id}:{conversation_id}` (services/memory.py). Earlier erasure only
+deleted `session:` keys. Tracing (OpenTelemetry + Jaeger, ADR-006) and logging
+record only redacted, non-sensitive attributes — lengths, hashes, categories,
+redaction counts — never raw user text, PII, secrets, prompts, Authorization
+headers, cookies, or tokens. Local Jaeger is ephemeral with no persistent
+tenant-payload store.
+
+**Rationale**:
+- Conversation memory is tenant data and must be erased — now covered.
+- There is no raw tenant data in traces/logs to delete, so a purge is a no-op;
+  redaction-before-emit is the actual control.
+
+**Consequence**: `_erase_redis` scans both `session:` and `conv:` prefixes;
+`_erase_traces` is a documented no-op (`summary["traces"] = 0`). If a persistent
+trace store holding tenant payloads is ever introduced, it MUST implement tenant
+purge and this ADR must be revisited.

@@ -9,6 +9,21 @@ Tagging interface for B and C:
 
 The tenant_manager read path (aggregate_cost_for_tenant) returns only numeric
 summaries — no conversations, no message content.
+
+Wiring status (2026-05): this primitive is complete but NOT yet called.
+TODO(Ashraf+Ali): call record_cost_event from the request paths that own the
+tenant-scoped DB session (cost_events is RLS-scoped, so the SAME session that
+set app.current_tenant must be used — the shared app.state.llm/embedder
+singletons have no session and must NOT be given global tenant state):
+  - LLM:        services/agent.py run_agent loop, after each llm.chat() — read
+                token counts from the Gemini response (response.usage_metadata:
+                prompt_token_count / candidates_token_count), call_type="llm".
+  - Embedding:  services/retrieval.py / services/ingestion.py, around
+                embedder.embed_one()/embed_batch(), call_type="embedding".
+                NOTE: adapters/embedder.py currently discards usage metadata;
+                surface it (or record a per-call/operation count) before wiring.
+Do not invent dollar prices — record measured token counts; leave cost_usd=0
+until a price table exists in config/docs.
 """
 
 from __future__ import annotations

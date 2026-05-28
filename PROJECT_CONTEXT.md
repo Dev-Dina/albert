@@ -222,10 +222,10 @@ Training is ephemeral (GPU, torch, Colab). Serving is lean (onnxruntime, sklearn
 | Postgres | All rows where `tenant_id = X` |
 | pgvector | All embedding chunks where `tenant_id = X` |
 | MinIO | All blobs under Tenant X's namespace |
-| Redis | All sessions for Tenant X |
-| Traces / logs | Purge or redact Tenant X references |
+| Redis | All sessions AND conversation memory for Tenant X (`session:` + `conv:` keys) |
+| Traces / logs | Redacted at write time — no raw tenant data is stored, so there is nothing to purge (ADR-013) |
 
-"The row is deleted but the embeddings are still searchable" is a compliance failure and a leak. The erasure test asserts all five stores.
+"The row is deleted but the embeddings are still searchable" is a compliance failure and a leak. The erasure test asserts Postgres, pgvector, MinIO, and Redis; traces carry no raw tenant data by design (ADR-013).
 
 The erasure path is **write/delete-only** — no read access. The Tenant Manager can destroy without ever reading. Every erasure is audit-logged.
 
