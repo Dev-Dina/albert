@@ -86,5 +86,10 @@ async def capture_lead(*, tenant_id: str, name: str, contact: str, intent: str) 
     # )
     # return {"lead_id": str(lead.id), "status": "captured"}
 
+    # OWNER C AUDIT NOTE (Owner A/B integration — not implemented here): the Lead
+    # model + leads table now exist (app.db.models.lead, migration 0003). This must
+    # persist a tenant-scoped lead (tenant_id from verified context, never LLM
+    # output) with per-visitor/session write rate-limiting, OR be explicitly marked
+    # out of scope for the submission. It currently writes nothing.
     logger.warning("capture_lead is a stub — no DB write performed tenant=%s", tenant_id)
     return {"lead_id": None, "status": "stub_no_write"}

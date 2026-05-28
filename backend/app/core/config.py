@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     widget_loader_url: str = "http://localhost:8000/widget.js"
 
     gemini_api_key: SecretStr = SecretStr("dev-gemini-key-change-me")
+    # Backend agent/RAG runtime LLM (Owner B; used by app.adapters.llm). This is
+    # NOT the Owner C classifier baseline — that is recorded separately as
+    # gemini-2.5-flash-lite in training/intent_classifier/artifacts + MODEL_CARD.md
+    # (precomputed; not read from this setting; never called in CI). Changing this
+    # value changes the live agent model.
     gemini_model: str = "gemini-2.0-flash"
     gemini_embedding_model: str = "text-embedding-004"
     groq_api_key: SecretStr | None = None

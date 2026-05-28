@@ -206,7 +206,7 @@ The API calls the NeMo guardrails sidecar over HTTP with a service credential. I
 | NO `transformers` | Same reason |
 | Image size | Must be under 500MB |
 | Serving runtime | `onnxruntime` for the DL model, `scikit-learn`+`joblib` for classical |
-| Boot guard | Server refuses to start if the artifact SHA-256 ≠ the pinned hash in `model_card.md` |
+| SHA-256 guard | On artifact SHA-256 ≠ the pinned hash in `MODEL_CARD.md`, the server fails closed: `/classify` returns 503 and the mismatched model is never used (the service may still boot to expose health/error diagnostics) |
 | Training | Happens in `training/` notebooks / Colab only — never in a container |
 
 Training is ephemeral (GPU, torch, Colab). Serving is lean (onnxruntime, sklearn). They never share a container.
