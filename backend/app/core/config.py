@@ -44,6 +44,10 @@ class Settings(BaseSettings):
 
     redis_session_ttl: int = 1800
     router_confidence_threshold: float = 0.7
+    minio_endpoint: str = "minio:9000"
+    minio_access_key: SecretStr = SecretStr("minioadmin")
+    minio_secret_key: SecretStr = SecretStr("minioadmin")
+    minio_secure: bool = False
 
 
 settings = Settings()

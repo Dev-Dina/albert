@@ -1,0 +1,251 @@
+openapi: 3.1.0
+info:
+  title: Albert — Tenant Admin Widget Configuration
+  version: 0.1.0
+  description: |
+    Tenant-admin endpoints consumed by the Streamlit admin app.
+
+    Authentication: Bearer JWT from POST /api/v1/auth/login. The user must
+    hold a tenant_membership.role of "tenant_admin" for the tenant in path
+    or query — never inferred from the request body.
+
+    Tenant scope is set on the request from the user's resolved membership;
+    cross-tenant access (e.g. user from Tenant A asks about Tenant B's
+    widget id) MUST return 404, not 403 (do not confirm existence).
+
+paths:
+  /api/v1/admin/widgets:
+    get:
+      operationId: listWidgets
+      summary: List widgets owned by the calling user's tenant.
+      security:
+        - platformAuth: []
+      responses:
+        '200':
+          description: Widgets owned by the caller's tenant.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AdminWidget' }
+    post:
+      operationId: createWidget
+      summary: Create a widget for the caller's tenant.
+      security:
+        - platformAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWidgetRequest'
+      responses:
+        '201':
+          description: Widget created. Server-generated public_widget_id is returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminWidget' }
+
+  /api/v1/admin/widgets/{widget_id}:
+    parameters:
+      - in: path
+        name: widget_id
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateWidget
+      summary: Edit theme / greeting / status.
+      security:
+        - platformAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateWidgetRequest' }
+      responses:
+        '200': { description: Updated. }
+        '404': { description: Not found OR not owned by caller's tenant. }
+
+  /api/v1/admin/widgets/{widget_id}/embed-snippet:
+    get:
+      operationId: getEmbedSnippet
+      summary: Return a copy-ready <script> snippet.
+      security:
+        - platformAuth: []
+      parameters:
+        - in: path
+          name: widget_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmbedSnippetResponse' }
+
+  /api/v1/admin/allowed-origins:
+    get:
+      operationId: listAllowedOrigins
+      summary: List the caller tenant's allowed origins.
+      security:
+        - platformAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AllowedOrigin' }
+    post:
+      operationId: addAllowedOrigin
+      summary: Add an exact origin to the allowlist.
+      security:
+        - platformAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAllowedOriginRequest' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AllowedOrigin' }
+        '422':
+          description: Origin failed validation (wildcards, path, query, etc.).
+
+  /api/v1/admin/allowed-origins/{origin_id}:
+    delete:
+      operationId: deleteAllowedOrigin
+      security:
+        - platformAuth: []
+      parameters:
+        - in: path
+          name: origin_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Removed; new tokens cannot be minted for this origin. }
+
+  /api/v1/admin/guardrail-config:
+    get:
+      operationId: getGuardrailConfig
+      security:
+        - platformAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuardrailConfig' }
+    put:
+      operationId: putGuardrailConfig
+      security:
+        - platformAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GuardrailConfig' }
+      responses:
+        '200': { description: Accepted; floor check passed. }
+        '422':
+          description: |
+            Floor violation. Body includes key_path, attempted_value,
+            floor_value so the admin app can render a specific message
+            (FR-019).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FloorViolation' }
+
+  /api/v1/admin/signing-key/rotate:
+    post:
+      operationId: rotateSigningKey
+      summary: Rotate the tenant's widget signing key.
+      description: |
+        Invalidates every outstanding session token for this tenant in one
+        action. Body is empty; the action is intentionally not parameterised.
+        Returns only metadata (version, created_at) — never the secret.
+      security:
+        - platformAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SigningKeyVersionMetadata' }
+
+components:
+  securitySchemes:
+    platformAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AdminWidget:
+      type: object
+      required: [id, public_widget_id, name, theme, greeting, status]
+      properties:
+        id: { type: string, format: uuid }
+        public_widget_id: { type: string }
+        name: { type: string }
+        theme: { type: object, additionalProperties: true }
+        greeting: { type: string }
+        status: { type: string, enum: [enabled, disabled] }
+    CreateWidgetRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        greeting: { type: string, maxLength: 500 }
+        theme: { type: object, additionalProperties: true }
+    UpdateWidgetRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        greeting: { type: string, maxLength: 500 }
+        theme: { type: object, additionalProperties: true }
+        status: { type: string, enum: [enabled, disabled] }
+    EmbedSnippetResponse:
+      type: object
+      required: [snippet, loader_url, data_widget_id]
+      properties:
+        snippet:
+          type: string
+          description: |
+            Copy-ready single-line <script src="..." data-widget-id="..."></script>.
+        loader_url: { type: string, format: uri }
+        data_widget_id: { type: string }
+    AllowedOrigin:
+      type: object
+      required: [id, origin]
+      properties:
+        id: { type: string, format: uuid }
+        origin: { type: string }
+    CreateAllowedOriginRequest:
+      type: object
+      additionalProperties: false
+      required: [origin]
+      properties:
+        origin:
+          type: string
+          description: Exact origin (scheme + host + port). No paths, no wildcards.
+    GuardrailConfig:
+      type: object
+      required: [config]
+      properties:
+        config: { type: object, additionalProperties: true }
+    FloorViolation:
+      type: object
+      required: [error, key_path, attempted_value, floor_value]
+      properties:
+        error: { type: string, enum: [floor_violation] }
+        key_path: { type: string, description: "e.g. 'block_topics' or 'tone.strictness'." }
+        attempted_value: {}
+        floor_value: {}
+    SigningKeyVersionMetadata:
+      type: object
+      required: [version, created_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }

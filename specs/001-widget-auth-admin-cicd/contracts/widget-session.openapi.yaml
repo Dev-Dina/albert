@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info:
+  title: Albert — Widget Session Token Exchange
+  version: 0.1.0
+  description: |
+    Public, anonymous endpoint that exchanges a public widget_id (plus the
+    embedding origin) for a short-lived, tenant-scoped session token.
+
+    Tenant identity is derived solely from the widget row found by widget_id;
+    the request body MUST NOT carry tenant_id.
+
+    Rate limited on two independent dimensions: per-IP and per-tenant. Both
+    gates are checked on every call.
+
+paths:
+  /api/v1/widget/session:
+    post:
+      operationId: exchangeWidgetSession
+      summary: Exchange a public widget_id + origin for a session token.
+      description: |
+        Returns a JWT signed with the tenant's signing key (HS256). The token
+        carries `tnt` (tenant_id), `wid` (widget.id), `kvr` (key version), and
+        `exp` (issued + ttl_seconds). The browser sends the embedding origin
+        via the standard `Origin` header; this endpoint MUST verify that
+        Origin against the tenant's allowlist server-side.
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Set by the browser; rejected if missing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WidgetSessionRequest'
+      responses:
+        '200':
+          description: Session token issued.
+          headers:
+            X-RateLimit-Tenant-Remaining:
+              schema: { type: integer }
+            X-RateLimit-IP-Remaining:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetSessionResponse'
+        '400':
+          description: Missing or malformed widget_id / Origin header.
+        '403':
+          description: |
+            Origin not on the tenant's allowlist, OR widget disabled, OR
+            widget not found. Response body is the same shape regardless to
+            avoid leaking which case applied.
+        '429':
+          description: |
+            Rate limit exceeded on per-IP OR per-tenant dimension.
+            The trip dimension is logged server-side (FR-015c) but NOT
+            disclosed in the response body — that would leak other tenants'
+            traffic shape.
+          headers:
+            Retry-After:
+              required: true
+              schema: { type: integer, minimum: 1 }
+              description: Seconds the client should wait before retrying.
+components:
+  schemas:
+    WidgetSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [widget_id]
+      properties:
+        widget_id:
+          type: string
+          pattern: '^[A-Za-z0-9]{22}$'
+          description: The public widget_id from the host page's data-widget-id.
+      # NOTE: NO tenant_id field. Adding one here would be ignored by the
+      # backend (FR-009) but is excluded from the contract entirely so
+      # contract-driven clients cannot send it.
+    WidgetSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [session_token, expires_in, ttl_seconds]
+      properties:
+        session_token:
+          type: string
+          description: JWT (HS256, per-tenant key). Carry as Bearer on subsequent calls.
+        expires_in:
+          type: integer
+          description: Seconds until expiry (== ttl_seconds for v1).
+        ttl_seconds:
+          type: integer
+          description: Token TTL (default 900 = 15 min).
+        widget:
+          $ref: '#/components/schemas/WidgetPublicView'
+    WidgetPublicView:
+      type: object
+      additionalProperties: false
+      required: [public_widget_id, theme, greeting]
+      properties:
+        public_widget_id:
+          type: string
+        theme:
+          type: object
+          additionalProperties: true
+        greeting:
+          type: string

@@ -6,7 +6,7 @@ Any business signs up, manages content in a CMS, and embeds an AI agent widget o
 
 ## Theme
 
-Named after Batman's butler. Albert acts like a digital butler/concierge.
+Albert acts like a digital butler/concierge.
 
 ## Phase 1 Goal
 

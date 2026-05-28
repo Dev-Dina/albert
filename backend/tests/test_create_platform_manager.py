@@ -1,0 +1,93 @@
+"""Unit tests for create_platform_manager service function.
+
+Uses in-memory SQLite (no Postgres required).
+
+Run:
+    uv run pytest backend/tests/test_create_platform_manager.py -v
+"""
+
+from __future__ import annotations
+
+import uuid
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.auth.models import Role
+from app.db.base import Base
+from app.db.models.membership import TenantMembership
+from app.db.models.user import User
+from app.tenancy.provisioning import create_platform_manager
+
+_ENGINE = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+
+@pytest_asyncio.fixture(autouse=True, scope="module")
+async def create_tables():
+    async with _ENGINE.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    async with _ENGINE.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def db() -> AsyncSession:
+    SessionLocal = async_sessionmaker(bind=_ENGINE, class_=AsyncSession, expire_on_commit=False)
+    async with SessionLocal() as session:
+        yield session
+        await session.rollback()
+
+
+ACTOR_ID = uuid.uuid4()
+
+
+@pytest_asyncio.fixture(autouse=True, scope="module")
+async def seed_actor():
+    SessionLocal = async_sessionmaker(bind=_ENGINE, class_=AsyncSession, expire_on_commit=False)
+    async with SessionLocal() as session:
+        session.add(User(id=ACTOR_ID, email="actor@test.local", hashed_password="x", is_active=True))
+        await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Success: new user + manager membership created
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_manager_success(db: AsyncSession) -> None:
+    manager = await create_platform_manager(
+        db=db,
+        actor_user_id=ACTOR_ID,
+        email="newmanager@test.local",
+        password="secret123",
+    )
+    assert manager.email == "newmanager@test.local"
+
+    result = await db.execute(
+        select(TenantMembership).where(TenantMembership.user_id == manager.id)
+    )
+    membership = result.scalar_one_or_none()
+    assert membership is not None
+    assert membership.role == Role.tenant_manager.value
+    assert membership.tenant_id is None
+
+
+# ---------------------------------------------------------------------------
+# Duplicate email is rejected
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_manager_rejects_duplicate_email(db: AsyncSession) -> None:
+    db.add(User(id=uuid.uuid4(), email="taken@test.local", hashed_password="x", is_active=True))
+    await db.flush()
+
+    with pytest.raises(ValueError, match="already exists"):
+        await create_platform_manager(
+            db=db,
+            actor_user_id=ACTOR_ID,
+            email="taken@test.local",
+            password="pass",
+        )

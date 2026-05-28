@@ -1,0 +1,81 @@
+openapi: 3.1.0
+info:
+  title: Albert — Widget Chat
+  version: 0.1.0
+  description: |
+    Authenticated chat endpoint for an embedded widget visitor.
+
+    Authentication: Bearer <session_token> issued by /api/v1/widget/session.
+
+    The server derives tenant_id SOLELY from the verified session token.
+    Any tenant_id field in the request body MUST be ignored.
+
+paths:
+  /api/v1/widget/chat:
+    post:
+      operationId: postWidgetChat
+      summary: Send a visitor message and get an assistant response.
+      security:
+        - widgetSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WidgetChatRequest'
+      responses:
+        '200':
+          description: Assistant response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetChatResponse'
+        '401':
+          description: |
+            Missing, malformed, expired, or signature-invalid session token.
+            The widget MUST respond by attempting a single silent re-exchange
+            (FR-008b) before showing the visitor any error.
+        '403':
+          description: Widget disabled, origin revoked, or tenant disabled.
+        '429':
+          description: Rate limit on the chat endpoint (separate from the exchange limit).
+          headers:
+            Retry-After:
+              required: true
+              schema: { type: integer, minimum: 1 }
+components:
+  securitySchemes:
+    widgetSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    WidgetChatRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        conversation_id:
+          type: string
+          format: uuid
+          description: Optional; server creates one if absent.
+        # NOTE: tenant_id is INTENTIONALLY ABSENT from this schema. If a
+        # client sends one, the server logs it as `body_tenant_id_ignored`
+        # (FR-009) and processes the request under the token's tenant.
+    WidgetChatResponse:
+      type: object
+      additionalProperties: false
+      required: [conversation_id, message]
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        message:
+          type: string
+        tool_calls:
+          type: array
+          items: { type: object, additionalProperties: true }
