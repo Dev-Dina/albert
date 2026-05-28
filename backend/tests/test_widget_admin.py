@@ -85,7 +85,6 @@ def _wire(state: _State, *, actor_tenant: uuid.UUID = _TENANT_A) -> str:
     caller's tenant from a stubbed membership lookup, not from the token
     itself.
     """
-    from app.api import deps
     from app.db.session import get_db
     from app.repositories import allowed_origin_repo, guardrail_config_repo, widget_repo
     from app.services import widget_admin_service
