@@ -20,7 +20,7 @@ Deliver the Model Safety & Guardrails slice (Dina — Owner C) that lets Albert 
 
 ## 2. Scope
 
-In scope (Dina — Owner C): `modelserver/`, `guardrails/`, the backend `inference_client`, backend redaction/request-context utilities, Owner C evals (`classifier`, `redteam_cross_tenant`, `redaction`), and the Owner C portions of `eval_thresholds.yaml`.
+In scope (Dina — Owner C): `modelserver/`, `guardrails/`, the backend `inference_client`, backend redaction/request-context utilities, Owner C evals (`classifier`, `redteam_cross_tenant`, `redaction`), and the Owner C portions of the canonical root [`eval_thresholds.yaml`](../../eval_thresholds.yaml).
 
 Out of scope: tenant DB schema / RLS plumbing (Owner A), agent/router and tool implementations (Owner B), admin UI and the CI workflow file wiring (Owner D), and any endpoint **rename/removal** (only additive aliases — see workstream 3).
 
@@ -52,7 +52,8 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 - Labels: `faq_rag`, `lead_capture`, `human_escalate`, `spam`, `other_agent`.
 - Dataset selection with recorded source + SHA-256.
 - Offline training: TF-IDF + LogisticRegression / LinearSVC → `.joblib` artifact (serving stays lean).
-- `modelserver/MODEL_CARD.md`: task, dataset source + SHA-256, metrics, served artifact SHA-256.
+- Required comparison baselines before production choice: classical ML (TF-IDF + LogisticRegression or LinearSVC), DL exported to ONNX and served via onnxruntime, and an offline LLM zero-shot baseline. All baselines use the same held-out test set.
+- `modelserver/MODEL_CARD.md`: task, dataset source + SHA-256, held-out split identity, per-baseline macro-F1/per-class F1/latency/cost/artifact-size/dependency impact, production-model rationale, served artifact SHA-256.
 - Artifact SHA-256 verification at boot (mismatch ⇒ refuse to serve); `/health` reports `model_version`, `artifact_sha256`, `loaded`.
 - Confidence behavior: `< 0.70` ⇒ `other_agent` (abstain).
 - *FR-C06/FR-C07/FR-C08/FR-C09/FR-C10.*
@@ -60,18 +61,24 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 ### Workstream 5 — Guardrails sidecar and tenant/platform rails · **status: planned**
 - Platform rails mandatory and always-on: prompt injection, jailbreak, cross-tenant extraction, system-prompt-leak, PII/secret redaction.
 - Tenant rails configurable by `tenant_admin` (own tenant) but **cannot weaken** platform rails — a platform DENY overrides any tenant ALLOW; tenant rails may only narrow. Reuse `backend/app/services/guardrail_floor.py` + `guardrails/app/platform_floor.yaml`.
+- Guardrail request/response shape is pinned in [`contracts/guardrails-api.md`](./contracts/guardrails-api.md): request text plus optional server-injected context; response `allowed`, `action`, `categories`, `redacted_text`, `reason`.
+- Stable categories include `prompt_injection`, `jailbreak`, `cross_tenant`, `system_prompt_extraction`, `tenant_id_override`, `tool_abuse`, `pii`, `secret`, and `credit_card`.
 - *FR-C11.*
 
 ### Workstream 6 — Red-team + redaction eval gates · **status: planned**
 - Red-team categories (root SPEC §10): prompt injection, jailbreak, cross-tenant extraction, system-prompt extraction, fake `tenant_id` override, tool abuse, redaction leak.
 - Redaction-leak suite.
 - Pass-rate target **1.00** for `redteam` and `redaction`.
+- Fixture schemas, local commands, output format, and redaction leak expectations are pinned in [`contracts/redteam-eval.md`](./contracts/redteam-eval.md).
 - Harnesses conform to the existing [`001` CI-gate contract](../001-widget-auth-admin-cicd/contracts/ci-gate.contract.md); wiring into `ci.yml` coordinated with Owner D.
 - *FR-C12/FR-C13.*
 
-### Workstream 7 — Optional DL/ONNX + LLM comparison · **status: deferrable**
-- Offline only; **no torch/transformers in runtime containers** (export ONNX, serve via onnxruntime).
-- Compare macro-F1, latency, cost, artifact size in the model card; justify the served choice.
+### Workstream 7 — Redaction hardening · **status: planned**
+- Required redaction types: fake API keys; Gemini/OpenAI/Groq-style API keys; Bearer tokens; service auth tokens; JWT-like strings; emails; phones; credit-card-like strings; and generic long token-like strings.
+- Leak surfaces: backend logs, guardrails logs, modelserver logs, exception tracebacks, HTTP error responses where applicable, OpenTelemetry span attributes, access logs, guardrails responses, eval runner output, and generated CI artifacts.
+- Redaction-before-trace/log rule: raw user text, raw prompts, system prompts, Authorization headers, cookies, API keys, service tokens, and raw PII/secrets must never be logged or traced. If user content must be represented, use length, hash, redaction type/count, or high-level category only.
+- Eval strategy: separate `evals/redaction/run.py` gate using root `eval_thresholds.yaml` `redaction.required_pass_rate = 1.00`; red-team keeps attack probes, redaction has its own planted-value leak suite.
+- Generated artifact rule: root `artifacts/` is generated local/CI output and should not be committed; eval runners print to stdout by default and write JSON only with optional `--output`; `training/intent_classifier/artifacts/` and `modelserver/artifacts/` are model artifacts and must not be deleted/ignored by this phase.
 
 ## 4. Cross-owner dependencies
 
@@ -89,9 +96,11 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 ## 6. Acceptance criteria
 
 - Modelserver classifies with no torch/transformers; artifact SHA-256 verified at boot; model card present. *(WS4)*
+- Model card includes the mandatory three-model comparison: classical ML, DL/ONNX, and LLM zero-shot baseline. *(WS4)*
 - Classifier input carries no `tenant_id`; below-threshold predictions abstain to `other_agent`. *(WS4)*
 - Guardrails enforce platform rails always-on; tenant rails cannot weaken a platform DENY. *(WS5)*
-- Redaction runs before any log/trace; a fake-API-key test proves no raw secret leaks. *(WS2 ✅; extended in WS6)*
+- Redaction runs before any log/trace/memory/error output; a fake-API-key test proves no raw secret leaks. *(WS2 ✅; extended in WS6)*
+- Redaction hardening covers the required detector set and leak surfaces, including access logs and generated CI artifacts. *(WS7)*
 - `API→modelserver` and `API→guardrails` require a verified service token and fail closed without it. *(WS1 ✅)*
 - Every request is traceable via `request_id` / `X-Request-ID` end-to-end. *(WS2 ✅)*
 - Red-team CI gate passes at the required rates and goes red on any safety regression. *(WS6)*
@@ -100,7 +109,8 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 ## 7. Test strategy
 
 - **Per-service unit tests** (`uv run python -m pytest -q` in `modelserver`, `guardrails`, `backend`): auth (done), redaction + request-id (done), classify/threshold/hash-fail-closed (WS4), rails precedence (WS5), alias parity (WS3).
-- **Eval gates** as `evals/<gate>/run.py` per the `001` CI-gate contract: `classifier` (macro-F1 ≥ threshold), `redteam_cross_tenant` (= 1.00), `redaction` (= 1.00); each prints `GATE=… STATUS=… OBSERVED=… THRESHOLD=…`, exits 0/1/2.
+- **Eval gates** as `evals/<gate>/run.py` per the `001` CI-gate contract: `classifier` (macro-F1 ≥ threshold), `redteam_cross_tenant` (= 1.00), `redaction` (= 1.00); each prints `GATE=… STATUS=… OBSERVED=… THRESHOLD=…`, exits 0/1/2, and writes root `artifacts/` output only when `--output` is explicitly passed.
+- **Canonical thresholds source:** Owner C gates read the root [`eval_thresholds.yaml`](../../eval_thresholds.yaml). The older [`evals/eval_thresholds.yaml`](../../evals/eval_thresholds.yaml) is legacy RAG/router data and is not canonical for Owner C gates.
 - **Red-team fixtures** for the seven categories in `evals/redteam_cross_tenant/fixtures/`.
 - **No-heavy-dep CI assertion**: serving lockfiles contain no `torch`/`transformers`.
 
@@ -110,4 +120,4 @@ Dina's section divides into seven workstreams. (Functional-requirement IDs `FR-C
 - Tenant DB schema, RLS, migrations (Owner A).
 - Agent wiring and tool implementations (Owner B).
 - Editing `.github/workflows/ci.yml` and admin UI (Owner D).
-- Editing root specs (kept upstream; a pointer back to this folder is a separate, approval-gated step).
+- Editing non-Owner-C root specs.

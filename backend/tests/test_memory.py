@@ -77,8 +77,8 @@ async def test_ttl_reset_on_write():
 @pytest.mark.asyncio
 async def test_cross_tenant_key_isolation():
     """Keys for different tenants must be distinct strings."""
-    key_a = f"conv:tenant-a:conv-1"
-    key_b = f"conv:tenant-b:conv-1"
+    key_a = "conv:tenant-a:conv-1"
+    key_b = "conv:tenant-b:conv-1"
     assert key_a != key_b
 
     # load_history for tenant-b should not get tenant-a's data

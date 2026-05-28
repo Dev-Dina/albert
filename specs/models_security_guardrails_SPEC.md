@@ -38,7 +38,7 @@ From the repo audit (actual current state):
 | Vault / secrets | `backend/app/clients/vault_client.py`, `backend/app/core/secrets.py` | Async Vault KV v2 read + health; token never logged. Available for Vault-sourced service creds. |
 | Logging | `backend/app/core/logging.py` | stdlib `basicConfig` only. **No request_id/trace_id, no structured logs, no redaction filter.** |
 | Audit | `backend/app/db/models/audit_log.py` | `audit_logs` table (actor_user_id, target_tenant_id, action, meta JSONB). Model exists; no writer yet. |
-| Eval thresholds | `eval_thresholds.yaml` | `classifier.macro_f1_min 0.60`, `redteam.required_pass_rate 1.00`, `redaction.required_pass_rate 1.00`, `smoke 1.00` (placeholders). |
+| Eval thresholds | root `eval_thresholds.yaml` | Canonical source for Owner C gates: `classifier.macro_f1_min 0.60`, `redteam.required_pass_rate 1.00`, `redaction.required_pass_rate 1.00`, `smoke 1.00` (placeholders). |
 | CI | `.github/workflows/ci.yml` | Placeholder — only an `echo`. No tests run, no eval gate, no red-team. ⚠️ **protected file**. |
 | Test/lint harness | `Makefile` | `make test` (pytest backend/modelserver/guardrails), `make lint` (ruff). |
 | Isolation auditor | `.claude/agents/tenant-isolation-auditor.md` | Read-only PASS/WARN/FAIL auditor — reusable for review/CI. |
@@ -117,7 +117,7 @@ The label set matches Owner B's router/agent consumption:
 - If `confidence < 0.70` → return **`other_agent`** (abstain to safe fallback); never guess a
   high-stakes label (`lead_capture`/`human_escalate`) below threshold.
 - 0.70 is the accepted starting value; it is config-driven and reconciled with
-  `eval_thresholds.yaml`, with the final value tuned against a real labeled set in the
+  the root `eval_thresholds.yaml`, with the final value tuned against a real labeled set in the
   classifier-baseline phase.
 
 ---
@@ -128,7 +128,14 @@ The label set matches Owner B's router/agent consumption:
 - **No `torch`, no `transformers`** in the serving container (constitution + project rule).
   Any deep-learning training/export happens **offline**; only the exported artifact is served.
 - **Model card required** (`modelserver/MODEL_CARD.md` in a later phase): task, dataset source +
-  SHA-256, metrics, chosen deployment model, and the served **artifact SHA-256**.
+  SHA-256, metrics, chosen production model, the served **artifact SHA-256**, and the mandatory
+  three-model comparison.
+- **Mandatory model comparison:** the classifier phase must evaluate and document all three
+  baselines before choosing the served model: classical ML (TF-IDF + LogisticRegression or
+  LinearSVC), DL exported to ONNX and served via onnxruntime, and an offline LLM zero-shot
+  baseline. All three baselines use the **same held-out test set**. The comparison records
+  macro-F1, per-class F1, latency, cost, artifact size, and serving/dependency impact in
+  `MODEL_CARD.md`, then states the selected production model and rationale.
 - **Artifact hash check at boot**: the modelserver computes the SHA-256 of the loaded artifact
   and compares it to a pinned value. On mismatch it **refuses to serve** (fails closed); `/health`
   reports `model_version`, `artifact_sha256`, and `loaded: true|false`.
@@ -183,10 +190,19 @@ The label set matches Owner B's router/agent consumption:
 
 ## 7. Redaction contract
 
-- **Redact before logs, traces, and memory.** Raw secrets and unredacted sensitive messages must
-  never reach a log line, a trace span, or stored conversation memory.
-- Detectors (regex-first; see decision O-6): email, phone, credit-card, API keys / tokens /
-  secrets, and the agreed PII set.
+- **Redact before logs, traces, memory, and error outputs.** Raw secrets and unredacted sensitive
+  messages must never reach a log line, a trace span, stored conversation memory, exception
+  response, traceback surface, or other error output.
+- Required detectors (regex-first; see decision O-6): fake API keys; Gemini/OpenAI/Groq-style API
+  keys; Bearer tokens; service auth tokens; JWT-like strings; emails; phone numbers;
+  credit-card-like strings; and generic long token-like strings.
+- Required leak surfaces: backend logs, guardrails logs, modelserver logs, exception tracebacks,
+  HTTP error responses where applicable, OpenTelemetry span attributes, access logs, guardrails
+  responses, eval runner output, and generated CI artifacts.
+- Access logs must be disabled, sanitized, or proven not to contain raw user text, raw prompts,
+  Authorization headers, cookies, API keys, service tokens, or raw PII/secrets.
+- If user content must be represented in logs/traces/artifacts, use length, hash, redaction
+  type/count, or high-level category only; never raw content.
 - Applied on the input-logging path and on output-to-user / output-persistence.
 - **Fail closed:** if a detector errors, redact rather than pass through.
 - Logs record only redaction **type/count**, never the raw value.
@@ -238,11 +254,19 @@ A red-team suite runs in CI and gates merges. Categories:
   or model output (must be ignored; tenant identity comes only from verified context).
 - **tool abuse** — attempts to misuse `rag_search` / `capture_lead` / `escalate` (e.g. write to or
   read from another tenant, unvalidated input).
-- **redaction leak** — secrets/PII surfacing in responses, logs, traces, or memory.
+- **redaction leak** — secrets/PII surfacing in responses, logs, traces, memory, errors, eval
+  runner output, or generated CI artifacts.
 
-Gate (against `eval_thresholds.yaml`): `redteam.required_pass_rate = 1.00` and
+Gate (against the root `eval_thresholds.yaml`): `redteam.required_pass_rate = 1.00` and
 `redaction.required_pass_rate = 1.00` — any failure makes CI red. Wiring into
 `.github/workflows/ci.yml` (protected) is coordinated with Owner D.
+
+Owner C uses a separate `evals/redaction/run.py` gate for planted-value leak
+coverage. Local eval runs print to stdout by default. CI may pass
+`--output artifacts/ci-gate-results.json` to create generated gate artifacts;
+root `artifacts/` output should not be committed. Model artifacts under
+`training/intent_classifier/artifacts/` and `modelserver/artifacts/` are not
+generated gate output and must not be deleted/ignored by redaction hardening.
 
 ---
 
@@ -257,13 +281,14 @@ Gate (against `eval_thresholds.yaml`): `redteam.required_pass_rate = 1.00` and
 | O-4 | Service auth mechanism | Vault-backed bearer service credential for baseline; local env fallback for dev; OAuth2-style JWT/mTLS are future alternatives | OAuth not required by brief; OAuth2 JWT / mTLS not adopted now |
 | O-5 | Guardrails engine | Stub/rules first + tests; NeMo optional if time allows | — |
 | O-6 | Redaction engine | Regex-first deterministic redaction | Presidio / Guardrails.ai not adopted now |
-| O-7 | CI thresholds | Keep existing `eval_thresholds.yaml` placeholders for now | Final values set after real metrics |
+| O-7 | CI thresholds | Keep existing root `eval_thresholds.yaml` placeholders for now | Final values set after real metrics; `evals/eval_thresholds.yaml` is not canonical for Owner C gates |
 | O-3 | Endpoint alignment | Target `/classify`, `/guardrails/input`, `/guardrails/output` (deprecated aliases during migration) | Accepted target — **not yet applied**; migration timing open |
 
 ### Still open (implementation details)
 - Dataset choice for the classifier.
 - Exact classical model choice (e.g. LogReg vs LinearSVC).
-- Whether DL/ONNX ships (Phase 7 is optional).
+- Whether DL/ONNX is selected for serving after the mandatory comparison. The DL/ONNX baseline
+  itself is required for evaluation and model-card evidence.
 - Final CI threshold values, set once real metrics exist.
 - Exact endpoint migration timing (Phase 4).
 
@@ -277,9 +302,9 @@ Gate (against `eval_thresholds.yaml`): `redteam.required_pass_rate = 1.00` and
 | Phase 2 | Service-to-service auth | Enforce Vault/env-backed bearer service credential on modelserver and guardrails; backend attaches the header; services fail closed with 401. |
 | Phase 3 | Redaction + tracing safety | Regex redaction layer + `request_id`/`trace_id` propagation + structured, redacted logging. (`logging.py` protected — warn.) |
 | Phase 4 | Endpoint alignment | `/predict`→`/classify`, `/check-input`/`/check-output`→`/guardrails/input`/`/guardrails/output`, with deprecated aliases during migration. Coordinate with Owner B (caller) + D (CI). Migration timing open. |
-| Phase 5 | Classifier baseline + model card | Offline classical sklearn (TF-IDF + LogReg/LinearSVC); metrics vs `classifier.macro_f1_min`; `MODEL_CARD.md` + artifact SHA-256 + boot hash check. |
-| Phase 6 | Guardrails + red-team tests | Real platform rails + red-team cases (§10) + CI gate against `eval_thresholds.yaml`. Coordinate with Owner D for `ci.yml`. |
-| Phase 7 | Optional DL/ONNX + LLM comparison | Offline DL→ONNX export + offline LLM baseline; 3-way comparison in model card. Deferrable. |
+| Phase 5 | Classifier baseline + model card | Offline classical sklearn (TF-IDF + LogReg/LinearSVC) plus required DL/ONNX and LLM zero-shot baselines; three-model comparison vs `classifier.macro_f1_min`; `MODEL_CARD.md` + artifact SHA-256 + boot hash check. |
+| Phase 6 | Guardrails + red-team tests | Real platform rails + red-team cases (§10) + CI gate against root `eval_thresholds.yaml`. Coordinate with Owner D for `ci.yml`. |
+| Phase 7 | Redaction hardening | Expand detector coverage and prove the full leak-surface contract with `evals/redaction/run.py`; no root artifacts by default, optional CI JSON with `--output`. |
 
 ---
 

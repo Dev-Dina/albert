@@ -34,3 +34,4 @@ service-account*.json
 
 # Spec Kit local state
 .specify/feature.json
+/artifacts/

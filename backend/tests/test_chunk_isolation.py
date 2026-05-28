@@ -1,11 +1,13 @@
 """Tenant isolation test for retrieval.
 
-Seeds two tenants with different chunks, runs retrieve() for Tenant A,
-and asserts that no Tenant B chunks appear in the results.
+Mocks two tenant IDs, runs retrieve() for Tenant A, and verifies that
+the retrieval service passes Tenant A's ID into the repository layer.
 
-This test mocks the DB layer — the RLS enforcement is tested separately
-via the migration; here we verify the repo filter logic is correct.
+This test mocks the DB layer — RLS enforcement is tested separately.
+Here we verify that retrieval does not accidentally call the repository
+with the wrong tenant_id.
 """
+
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,7 +33,6 @@ async def test_retrieval_never_returns_other_tenant_chunks() -> None:
     reranker = AsyncMock()
     reranker.rerank.return_value = [(0, 0.9)]
 
-    # search_children returns only Tenant A's child (repo filters by tenant_id).
     child_a = MagicMock()
     child_a.parent_id = parent_id_a
     child_a.text = "Tenant A content"
@@ -55,17 +56,17 @@ async def test_retrieval_never_returns_other_tenant_chunks() -> None:
             reranker=reranker,
         )
 
-    # Verify results contain only Tenant A's chunk.
     assert len(result) == 1
     assert result[0].parent_chunk_id == str(parent_id_a)
 
-    # Verify the repo was called with Tenant A's UUID — not Tenant B's.
-    call_kwargs = mock_repo.search_children.call_args.kwargs
-    assert str(call_kwargs["tenant_id"]) == tenant_a
+    search_kwargs = mock_repo.search_children.call_args.kwargs
+    assert str(search_kwargs["tenant_id"]) == tenant_a
+    assert str(search_kwargs["tenant_id"]) != tenant_b
 
     fetch_kwargs = mock_repo.fetch_parents_by_ids.call_args.kwargs
     assert str(fetch_kwargs["tenant_id"]) == tenant_a
+    assert str(fetch_kwargs["tenant_id"]) != tenant_b
 
-    # Tenant B's parent_id never appears in any result.
     result_ids = {r.parent_chunk_id for r in result}
+    assert str(parent_id_a) in result_ids
     assert str(parent_id_b) not in result_ids

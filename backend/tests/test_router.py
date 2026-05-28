@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from app.schemas.router import RouterDecision
 from app.services.router import classify_and_route
 
 

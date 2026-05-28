@@ -18,6 +18,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user
 from app.auth.models import Role
 from app.auth.users import (
     create_access_token,
@@ -29,6 +30,7 @@ from app.db.models.membership import TenantMembership
 from app.db.models.user import User
 from app.db.models.widget_config import WidgetConfig
 from app.db.session import get_db
+from app.schemas.auth import CurrentUserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -133,6 +135,23 @@ async def login(
         tenant_id=tenant_id,
     )
     return TokenResponse(access_token=token)
+
+
+# ---------------------------------------------------------------------------
+# Current user
+# ---------------------------------------------------------------------------
+
+@router.get("/me", response_model=CurrentUserResponse)
+async def me(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> CurrentUserResponse:
+    """Return the authenticated user's identity. 401 without a valid Bearer token."""
+    return CurrentUserResponse(
+        id=str(current_user.id),
+        email=current_user.email,
+        role=current_user.platform_role,
+        is_active=current_user.is_active,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 """widget tables + RLS
 
-Revision ID: 0003
-Revises: 0002
+Revision ID: 0004_widget_tables
+Revises: 0003_tenant_owned_tables_rls
 Create Date: 2026-05-26
 
 Creates the tenant-scoped widget tables (widgets, widget_allowed_origins,
@@ -19,8 +19,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0003"
-down_revision: str | None = "0002"
+revision: str = "0004_widget_tables"
+down_revision: str | None = "0003_tenant_owned_tables_rls"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

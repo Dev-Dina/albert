@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.adapters.embedder import EmbedError
-from app.services.retrieval import RetrievalResult, retrieve
+from app.services.retrieval import retrieve
 
 
 def _make_child(parent_id: uuid.UUID, text: str = "child text") -> MagicMock:

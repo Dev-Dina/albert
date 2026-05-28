@@ -1,7 +1,7 @@
 """chunk tables: parent_chunks and child_chunks with RLS and HNSW index
 
-Revision ID: 0002
-Revises: 0001
+Revision ID: 0006_chunk_tables
+Revises: 0005_nullable_tenant_id
 Create Date: 2026-05-26
 
 Creates parent_chunks and child_chunks tables for the RAG pipeline.
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0002"
-down_revision: str | None = "0001"
+revision: str = "0006_chunk_tables"
+down_revision: str | None = "0005_nullable_tenant_id"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

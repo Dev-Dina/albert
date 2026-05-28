@@ -1,0 +1,5 @@
+{"message": "what are your hours", "expected_tool": "rag_search"}
+{"message": "do you ship internationally", "expected_tool": "rag_search"}
+{"message": "I need to speak to a manager", "expected_tool": "escalate"}
+{"message": "can someone email me about this", "expected_tool": "capture_lead"}
+{"message": "tell me about your return policy", "expected_tool": "rag_search"}

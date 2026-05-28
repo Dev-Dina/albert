@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import JSON, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,7 +26,13 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String, nullable=False)
     # Attribute is "meta" because SQLAlchemy reserves ``metadata``; DB column is "metadata".
     meta: Mapped[dict[str, Any]] = mapped_column(
-        "metadata", JSONB, nullable=False, default=dict, server_default="{}"
+        # JSONB on Postgres; JSON on SQLite so unit tests can create_all without a
+        # live Postgres. Postgres DDL and Alembic migrations are unchanged.
+        "metadata",
+        JSONB().with_variant(JSON(), "sqlite"),
+        nullable=False,
+        default=dict,
+        server_default="{}",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

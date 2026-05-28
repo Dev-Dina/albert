@@ -20,6 +20,9 @@ async def classify_and_route(message: str, tenant_id: str) -> RouterDecision:
     """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
+            # TODO(Ali): /classify expects {"text": message}, not {"message": ...}
+            # (422 → silent agent fallback every call). Use Owner C labels:
+            # faq_rag, lead_capture, human_escalate, spam, other_agent.
             resp = await client.post(
                 f"{settings.modelserver_url}/classify",
                 json={"text": message},

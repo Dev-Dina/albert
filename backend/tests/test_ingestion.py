@@ -3,12 +3,12 @@
 All DB and API calls are mocked — no real database or API keys needed.
 """
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.adapters.embedder import EmbedError
-from app.services.ingestion import IngestionResult, ingest_tenant_content, _split_into_chunks
+from app.services.ingestion import ingest_tenant_content, _split_into_chunks
 
 
 # --- chunker unit tests ---

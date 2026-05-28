@@ -51,6 +51,7 @@ Then check:
 - Guardrails health: <http://localhost:8010/health>
 - MinIO console: <http://localhost:9001> (login `minioadmin` / `minioadmin`)
 - Vault: <http://localhost:8200> (token `dev-root-token`)
+- Jaeger tracing UI: <http://localhost:16686>
 
 Notes:
 
@@ -63,6 +64,7 @@ Notes:
 - `.env` is git-ignored; `.env.example` is tracked (committed) and is the source of defaults.
 - Backend config is centralized in `backend/app/core/config.py` (pydantic-settings); tests do
   not require a real `.env` (every setting has a default).
+- Secret inventory and Vault/local fallback rules live in [docs/SECRETS.md](docs/SECRETS.md).
 
 ## Backend Endpoints
 
@@ -103,6 +105,23 @@ The local command requires `DATABASE_URL` to point at a database reachable from 
 | redis       | 6379 → 6379            | redis:7 |
 | minio       | 9000 → 9000, 9001 → 9001 | API / console; `minioadmin` / `minioadmin` |
 | vault       | 8200 → 8200            | dev mode; root token `dev-root-token` (local only) |
+| jaeger      | 16686 → 16686, 4317 → 4317, 4318 → 4318 | OpenTelemetry local tracing backend |
+
+## Observability
+
+Local distributed tracing uses OpenTelemetry with Jaeger all-in-one.
+
+- Tracing backend: OpenTelemetry + Jaeger.
+- UI: <http://localhost:16686>
+- Config: `JAEGER_UI_BASE_URL=http://localhost:16686`,
+  `JAEGER_QUERY_BASE_URL=http://localhost:16686`.
+- Services traced: backend, modelserver, guardrails.
+- Propagation: W3C trace context plus existing `X-Request-ID` correlation.
+- Safety: do not trace raw user text, prompts, Authorization headers, cookies,
+  service tokens, API keys, or raw PII/secrets.
+
+Run `docker compose up --build`, send a request through the backend that calls
+modelserver or guardrails, then open Jaeger and select the Albert services.
 
 ## Team Workflow
 

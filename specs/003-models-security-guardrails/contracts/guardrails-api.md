@@ -25,6 +25,27 @@ Added alongside the current paths (same handlers); old paths **kept**, not renam
 - **input** — inspect inbound conversation text before the model/agent: detect/block prompt injection, jailbreak, cross-tenant extraction, system-prompt extraction.
 - **output** — inspect model/agent output before it returns or is persisted: redact PII/secrets; block system-prompt leakage and cross-tenant content.
 
+**Request** (WS5)
+```json
+{ "text": "string (required, non-empty, bounded length)",
+  "context": {
+    "source": "input | output",
+    "request_id": "optional server-issued correlation id",
+    "tenant_id": "optional server-injected verified tenant id only",
+    "tenant_rails": {
+      "allowed_topics": [],
+      "blocked_topics": [],
+      "enabled_tools": [],
+      "tone": "optional tenant-admin configured value"
+    }
+  } }
+```
+
+- Visitor/client/model input MUST NOT be trusted for `tenant_id`.
+- If `tenant_id` is present, it must come from verified backend context only.
+- Raw secrets and raw PII MUST NOT be copied into logs or trace attributes.
+- Tenant rails are optional and may only narrow behavior.
+
 **Response** (WS5)
 ```json
 { "allowed": true,
@@ -33,6 +54,18 @@ Added alongside the current paths (same handlers); old paths **kept**, not renam
   "redacted_text": null,
   "reason": "" }
 ```
+
+Response semantics:
+
+- `allowed=true`, `action=allow`: no platform/tenant rail blocked the text.
+- `allowed=true`, `action=redact`: text is allowed only after redaction;
+  `redacted_text` contains safe text and raw values are never returned in logs/traces.
+- `allowed=false`, `action=block`: text must not continue to the next stage.
+- `categories` contains stable machine-readable category names such as
+  `prompt_injection`, `jailbreak`, `cross_tenant`, `system_prompt_extraction`,
+  `tenant_id_override`, `tool_abuse`, `pii`, `secret`, `credit_card`.
+- `reason` is safe for logs and operators; it must not contain raw user text,
+  secrets, Authorization headers, cookies, prompts, or raw PII.
 
 ## Rails precedence (WS5 — hard rule)
 - **Platform rails** (prompt injection, jailbreak, cross-tenant refusal, system-prompt-leak, PII/secret redaction): always-on, **not tenant-editable**.

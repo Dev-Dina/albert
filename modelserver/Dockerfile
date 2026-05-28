@@ -14,6 +14,7 @@ RUN uv sync --frozen --no-dev
 
 # Copy application code after dependencies
 COPY app ./app
+COPY artifacts ./artifacts
 
 EXPOSE 8020
 

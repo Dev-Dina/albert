@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.embedder import EmbedderAdapter, EmbedError
+from app.adapters.embedder import EmbedderAdapter
 from app.adapters.reranker import RerankerAdapter
 from app.core.config import settings
 from app.cost import record_cost_event

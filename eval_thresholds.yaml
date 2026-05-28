@@ -1,24 +1,42 @@
-# Albert — evaluation thresholds
+# Albert — evaluation thresholds (canonical, repo root).
 #
-# DAY 1 PLACEHOLDERS. These numbers are intentionally loose starting points.
-# They MUST be tightened once real eval datasets and harnesses exist.
-# Do not treat these as production quality bars.
+# Single source of truth for CI gate thresholds. Loaded by
+# `evals/common/thresholds.py` (Owner D, spec 001-widget-auth-admin-cicd)
+# and consumed by every `evals/<gate>/run.py` plus Owner C's `rag_eval.py`
+# and `tool_selection_eval.py`. The previous flat-key duplicate at
+# `evals/eval_thresholds.yaml` was removed by T086 to remove drift risk.
+#
+# Safety floor (FR-026, FR-027): `redteam.required_pass_rate` and
+# `redaction.required_pass_rate` MUST stay at 1.00. The first CI step
+# (`evals/common/validate_thresholds.py`) refuses anything lower.
 
 classifier:
-  macro_f1_min: 0.60        # placeholder — raise once a labeled set exists
+  # DAY 1 PLACEHOLDER — raise when real dataset lands
+  macro_f1_min: 0.60
 
 rag:
-  hit_at_5_min: 0.60        # placeholder — retrieval hit@5
-  mrr_min: 0.30             # placeholder — mean reciprocal rank
+  # DAY 1 PLACEHOLDER — raise when real dataset lands
+  hit_at_5_min: 0.60
+  # DAY 1 PLACEHOLDER — raise when real dataset lands
+  mrr_min: 0.30
 
 agent_tool_selection:
-  accuracy_min: 0.70        # placeholder — correct tool chosen
+  # DAY 1 PLACEHOLDER — raise when real dataset lands
+  accuracy_min: 0.70
 
 redteam:
-  required_pass_rate: 1.00  # safety: no regressions tolerated
+  required_pass_rate: 1.00  # safety floor — DO NOT lower (FR-026)
 
 redaction:
-  required_pass_rate: 1.00  # safety: no leaked secrets/PII tolerated
+  required_pass_rate: 1.00  # safety floor — DO NOT lower (FR-027)
 
 smoke:
   required_pass_rate: 1.00  # basic end-to-end must always pass
+
+ci:
+  # Wall-clock budget for the full CI run (lint → typecheck → image_build → smoke
+  # → 5 eval gates → summary). Backs SC-006's "team's agreed CI time budget"
+  # promise. Soft signal by default: T087 surfaces observed vs threshold in the
+  # PR summary; flip to a hard gate (fail the build on exceed) once we have a
+  # few weeks of real run-times. 600s ≈ 10 min, the team's stated target.
+  total_budget_seconds: 600
