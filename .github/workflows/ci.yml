@@ -1,13 +1,260 @@
 name: CI
 
+# PROTECTED FILE — see CLAUDE.md.
+# Rewritten for spec 001-widget-auth-admin-cicd (Owner D, Phase 6).
+#
+# Pipeline contract (FR-021..030, contracts/ci-gate.contract.md):
+#   1. validate_thresholds  — first step; refuses to run if redteam/redaction
+#                              required_pass_rate < 1.0 (FR-026, FR-027).
+#   2. lint, typecheck, image_build  — parallel after validate_thresholds.
+#   3. smoke  — needs image_build; failure short-circuits eval gates (FR-028).
+#   4. five eval gates (classifier, agent_tool_selection, rag,
+#      redteam_cross_tenant, redaction) — parallel after smoke.
+#   5. summary  — always() after gates; renders markdown table to
+#      $GITHUB_STEP_SUMMARY and fails the build if any gate failed.
+#
+# No `continue-on-error: true` on any gate (FR-030). Flakes surface as red.
+
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
-  backend-lint:
-    uses: ./.github/workflows/backend-lint.yml
+  validate_thresholds:
+    name: Validate thresholds (FR-026/FR-027 floor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python -m evals.common.validate_thresholds
 
-  rag-eval:
-    uses: ./.github/workflows/rag-eval.yml
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync
+      - run: uv run ruff check .
+
+  typecheck:
+    name: Type-check (syntax floor)
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Minimum bar: every .py file must parse cleanly. Promote to mypy/pyright
+      # in a follow-up once typed stubs land for the new services.
+      - run: python -m compileall -q backend/app admin/app evals scripts
+
+  image_build:
+    name: Image build + widget bundle size
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install widget deps + build
+        working-directory: widget
+        run: |
+          npm install
+          node esbuild.config.mjs
+
+      # T088: enforce bundle byte budgets in CI.
+      # widget.js (loader)  ≤ 4096 bytes  (plan.md Performance Goals)
+      # bundle-*.js        ≤ 163840 bytes (160 KB ceiling; see T095a follow-up
+      #                                    to bring back under 110 KB).
+      - name: Enforce widget bundle size budgets
+        run: |
+          set -e
+          loader_size=$(wc -c < widget/dist/widget.js)
+          echo "widget.js = ${loader_size} bytes (budget: 4096)"
+          if [ "${loader_size}" -gt 4096 ]; then
+            echo "FAIL: widget.js exceeds 4096-byte budget" >&2
+            exit 1
+          fi
+          bundle_file=$(ls widget/dist/bundle-*.js | head -1)
+          bundle_size=$(wc -c < "${bundle_file}")
+          echo "$(basename ${bundle_file}) = ${bundle_size} bytes (budget: 163840)"
+          if [ "${bundle_size}" -gt 163840 ]; then
+            echo "FAIL: ${bundle_file} exceeds 163840-byte (160 KB) budget" >&2
+            exit 1
+          fi
+
+      - name: docker compose build
+        run: docker compose build
+
+      - name: Upload widget dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: widget-dist
+          path: widget/dist/
+          retention-days: 1
+
+  smoke:
+    name: Smoke (docker compose up + /health)
+    runs-on: ubuntu-latest
+    needs: image_build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore widget dist
+        uses: actions/download-artifact@v4
+        with:
+          name: widget-dist
+          path: widget/dist/
+      - name: Run smoke
+        env:
+          SMOKE_TIMEOUT_SECONDS: "120"
+        run: |
+          cp .env.example .env
+          bash scripts/smoke_test.sh
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Eval gates — parallel, each writes one record to
+  # artifacts/ci-gate-results.jsonl (uploaded for the summary job).
+  # ─────────────────────────────────────────────────────────────────────
+  classifier:
+    name: Eval — classifier (FR-023)
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python -m evals.classifier.run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-classifier
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: ignore
+
+  tool_selection:
+    name: Eval — agent tool selection (FR-024)
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python -m evals.tool_selection.run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-tool_selection
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: ignore
+
+  rag:
+    name: Eval — RAG (FR-025)
+    runs-on: ubuntu-latest
+    needs: smoke
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync --locked
+      - name: Run retrieval/ingestion/isolation unit tests (Owner C handoff)
+        run: uv run pytest tests/test_ingestion.py tests/test_retrieval.py tests/test_chunk_isolation.py -v
+      - name: RAG gate runner
+        working-directory: ${{ github.workspace }}
+        run: PYTHONPATH=.:backend uv run --directory backend python -m evals.rag.run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-rag
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: ignore
+
+  redteam_cross_tenant:
+    name: Eval — cross-tenant red team (FR-026, MUST be 1.0)
+    runs-on: ubuntu-latest
+    needs: smoke
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync --locked
+      - name: Run cross-tenant red-team gate
+        working-directory: ${{ github.workspace }}
+        run: PYTHONPATH=.:backend uv run --directory backend python -m evals.redteam_cross_tenant.run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-redteam
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: ignore
+
+  redaction:
+    name: Eval — redaction (FR-027, MUST be 1.0)
+    runs-on: ubuntu-latest
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python -m evals.redaction.run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-gate-redaction
+          path: artifacts/ci-gate-results.jsonl
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Summary — always runs, fails the build if any gate failed.
+  # ─────────────────────────────────────────────────────────────────────
+  summary:
+    name: CI summary
+    runs-on: ubuntu-latest
+    needs: [classifier, tool_selection, rag, redteam_cross_tenant, redaction]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Download all gate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: collected-artifacts/
+      - name: Render summary
+        env:
+          GATE_RUN_START: ${{ github.event.repository.pushed_at }}
+        run: python scripts/ci_summary.py

@@ -1,0 +1,18 @@
+{
+  "_comment": "Inventory of the cross-tenant attack attempts the gate runs. The gate uses backend/tests/redteam/cross_tenant_demo.py::run_all() as the source of truth; this file documents the EXPECTED-fail attempts so a contributor who removes one (or adds a new one without wiring it in) is visible in code review.",
+  "attempts": [
+    {
+      "name": "disallowed_origin_token_exchange",
+      "describe": "POST /api/v1/widget/session with Origin: https://attacker.test → must 403"
+    },
+    {
+      "name": "forged_token_chat",
+      "describe": "POST /api/v1/widget/chat with HS256 token signed by a forged key → must 401"
+    },
+    {
+      "name": "body_tenant_id_injection",
+      "describe": "POST /api/v1/widget/chat with valid Tenant A token AND body tenant_id=Tenant B → must be served strictly under Tenant A (body field ignored)"
+    }
+  ],
+  "required_pass_rate": 1.0
+}

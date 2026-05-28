@@ -1,0 +1,10 @@
+{"text": "what are your hours", "label": "hours", "predicted": "hours"}
+{"text": "do you ship internationally", "label": "shipping", "predicted": "shipping"}
+{"text": "how do returns work", "label": "returns", "predicted": "returns"}
+{"text": "I need to email a manager", "label": "escalate", "predicted": "escalate"}
+{"text": "send me to a human", "label": "escalate", "predicted": "escalate"}
+{"text": "can someone follow up", "label": "lead", "predicted": "lead"}
+{"text": "I want a quote", "label": "lead", "predicted": "hours"}
+{"text": "tell me about pricing", "label": "pricing", "predicted": "pricing"}
+{"text": "where is the store", "label": "hours", "predicted": "hours"}
+{"text": "thanks bye", "label": "other", "predicted": "other"}
