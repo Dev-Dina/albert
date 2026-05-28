@@ -21,12 +21,9 @@ async def classify_and_route(message: str, tenant_id: str) -> RouterDecision:
     """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # OWNER C AUDIT NOTE (Owner B integration — not changed here):
-            # modelserver POST /classify expects {"text": <message>}
-            # (ClassifyRequest, extra="forbid"), NOT {"message": ...}. The current
-            # body 422s, so the except-branch below silently falls back to the agent
-            # on every call. Classifier labels are: faq_rag, lead_capture,
-            # human_escalate, spam, other_agent (not greeting/farewell/out_of_scope).
+            # TODO(Ali): /classify expects {"text": message}, not {"message": ...}
+            # (422 → silent agent fallback every call). Use Owner C labels:
+            # faq_rag, lead_capture, human_escalate, spam, other_agent.
             resp = await client.post(
                 f"{settings.modelserver_url}/classify",
                 json={"message": message},

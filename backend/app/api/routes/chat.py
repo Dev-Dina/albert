@@ -15,10 +15,8 @@ router = APIRouter()
 
 
 def _guardrails_check(text: str) -> bool:
-    # OWNER C AUDIT NOTE (Owner B integration — not implemented here): the Owner C
-    # guardrails sidecar is delivered. This must call it before agent input AND
-    # after final output via POST /guardrails/input and /guardrails/output, with
-    # Authorization: Bearer <SERVICE_AUTH_TOKEN>, and FAIL CLOSED on error/non-200.
+    # TODO(Ali): call delivered guardrails sidecar before input + after output
+    # (POST /guardrails/input,/output; Bearer service token; fail closed).
     return True
 
 
@@ -28,9 +26,8 @@ async def chat(
     body: ChatRequest,
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
 ) -> ChatResponse:
-    # OWNER C AUDIT NOTE (Owner A/B — not changed here): tenant identity must come
-    # from the verified widget/session token, never a client-supplied X-Tenant-Id
-    # header. Trusting this header is a cross-tenant breach vector.
+    # TODO(Ali): derive tenant from verified token, not client X-Tenant-Id
+    # (cross-tenant breach vector).
     tenant_id = x_tenant_id
 
     if not body.message.strip():

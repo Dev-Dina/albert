@@ -12,17 +12,11 @@ router = APIRouter(prefix="/ingest", tags=["ingestion"])
 
 
 def _get_current_tenant(request: Request) -> str:
-    """Stub for Owner A's get_current_tenant() dependency.
+    """Resolve the tenant for an ingestion request.
 
-    TODO: replace with real JWT auth dependency once Owner A delivers it:
-        from app.core.auth import get_current_tenant
-
-    Until then tenant_id comes from X-Tenant-Id header — local dev only.
-    Never trust this in production.
-
-    OWNER C AUDIT NOTE (Owner A/B — not changed here): this route is mounted on
-    main; trusting a client-supplied X-Tenant-Id is a cross-tenant breach vector.
-    Replace with verified token-derived tenant before any non-dev use.
+    TODO(Ali): derive tenant from verified admin auth, not client X-Tenant-Id.
+    This route is mounted on main; trusting the header is a cross-tenant breach
+    vector (local dev only — never trust in production).
     """
     tenant_id = request.headers.get("X-Tenant-Id")
     if not tenant_id:
