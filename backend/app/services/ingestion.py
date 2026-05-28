@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.embedder import EmbedderAdapter, EmbedError
+from app.core.config import settings
+from app.cost import record_cost_event
 from app.repos.chunk_repo import ChunkRepo, ChildChunkRow, ParentChunkRow
 
 logger = logging.getLogger(__name__)
@@ -124,6 +126,16 @@ async def ingest_tenant_content(
                 )
                 embeddings = await embedder.embed_batch(batch_texts)
                 all_embeddings.extend(embeddings)
+                try:
+                    await record_cost_event(
+                        db=db,
+                        tenant_id=tenant_uuid,
+                        call_type="embedding",
+                        model=settings.gemini_embedding_model,
+                        input_tokens=len(batch_texts),
+                    )
+                except Exception:
+                    logger.warning("ingestion.cost_record_failed tenant=%s", tenant_id)
 
             for i, emb in enumerate(all_embeddings):
                 child_rows[i] = ChildChunkRow(

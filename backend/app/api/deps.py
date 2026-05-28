@@ -15,6 +15,7 @@ from app.core.security import (
     verify_widget_session_token,
 )
 from app.core.tenant_context import tenant_context
+from app.db.models.membership import TenantMembership
 from app.db.models.user import User
 from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion
 from app.db.session import get_db
@@ -52,6 +53,24 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise _credentials_exc
     return user
+
+
+async def get_admin_tenant_id(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    """Return the tenant_id for the authenticated admin user.
+
+    Reads from tenant_memberships — never from a client-supplied header/body.
+    Raises 403 if the user has no tenant membership.
+    """
+    result = await db.execute(
+        select(TenantMembership.tenant_id).where(TenantMembership.user_id == user.id)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tenant membership")
+    return str(row)
 
 
 _widget_credentials_exc = HTTPException(

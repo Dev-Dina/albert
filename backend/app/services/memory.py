@@ -4,6 +4,7 @@ import logging
 from redis.asyncio import Redis
 
 from app.core.config import settings
+from app.core.redaction import redact
 
 logger = logging.getLogger(__name__)
 
@@ -11,8 +12,7 @@ _MAX_TURNS = 10
 
 
 def _redact(text: str) -> str:
-    # TODO(Ali): redactor delivered — call app.core.redaction.redact() before Redis write.
-    return text
+    return redact(text).text
 
 
 async def load_history(redis: Redis, tenant_id: str, conversation_id: str) -> list[dict]:

@@ -1,8 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Header, HTTPException, Request
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.api.deps import get_admin_tenant_id
+from app.core.config import settings
 from app.db.tenant_session import get_tenant_db
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services import memory as memory_service
@@ -13,22 +16,42 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_GUARDRAILS_TIMEOUT = 5.0
 
-def _guardrails_check(text: str) -> bool:
-    # TODO(Ali): call delivered guardrails sidecar before input + after output
-    # (POST /guardrails/input,/output; Bearer service token; fail closed).
-    return True
+
+async def _guardrails_check(endpoint: str, text: str) -> bool:
+    """POST to guardrails sidecar. Returns True only when sidecar explicitly allows.
+
+    Fails closed: any non-200, timeout, connection error, or block verdict → False.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=_GUARDRAILS_TIMEOUT) as client:
+            resp = await client.post(
+                f"{settings.guardrails_url}/{endpoint}",
+                json={"text": text},
+                headers={
+                    "Authorization": f"Bearer {settings.service_auth_token.get_secret_value()}"
+                },
+            )
+        if resp.status_code != 200:
+            logger.warning("guardrails.%s non-200 status=%d — blocking", endpoint, resp.status_code)
+            return False
+        data = resp.json()
+        allowed: bool = data.get("allowed", False)
+        if not allowed:
+            logger.info("guardrails.%s blocked", endpoint)
+        return allowed
+    except Exception as exc:
+        logger.warning("guardrails.%s failed error=%s — blocking (fail closed)", endpoint, exc)
+        return False
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: Request,
     body: ChatRequest,
-    x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
+    tenant_id: str = Depends(get_admin_tenant_id),
 ) -> ChatResponse:
-    # TODO(Ali): derive tenant from verified token, not client X-Tenant-Id
-    # (cross-tenant breach vector).
-    tenant_id = x_tenant_id
 
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
@@ -37,10 +60,14 @@ async def chat(
 
     history = await memory_service.load_history(redis, tenant_id, body.conversation_id)
 
-    if not _guardrails_check(body.message):
+    if not await _guardrails_check("input", body.message):
         raise HTTPException(status_code=400, detail="Message blocked by guardrails")
 
     decision = await router_service.classify_and_route(body.message, tenant_id)
+
+    # spam label → drop immediately, no agent call
+    if decision.action == "direct" and decision.reply is None:
+        raise HTTPException(status_code=400, detail="Message blocked")
 
     if decision.action == "direct" and decision.reply:
         reply = decision.reply
@@ -54,6 +81,7 @@ async def chat(
                 user_message=body.message,
                 llm=request.app.state.llm,
                 db=db,
+                redis=redis,
                 embedder=request.app.state.embedder,
                 reranker=request.app.state.reranker,
                 history=history,
@@ -61,8 +89,8 @@ async def chat(
         reply = result.reply
         routed_to = "agent"
 
-    if not _guardrails_check(reply):
-        reply = "I'm sorry, I can't help with that."
+    if not await _guardrails_check("output", reply):
+        raise HTTPException(status_code=400, detail="Response blocked by guardrails")
 
     await memory_service.save_turn(redis, tenant_id, body.conversation_id, body.message, reply)
 

@@ -1,13 +1,17 @@
-"""Contract tests for POST /api/v1/widget/chat (US1 happy path stub)."""
+"""Contract tests for POST /api/v1/widget/chat."""
 
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
 from app.core.security import mint_widget_session_token
 from app.main import app
+from app.schemas.router import RouterDecision
+from app.services.agent import AgentResult
 
 client = TestClient(app)
 
@@ -53,17 +57,46 @@ def teardown_function() -> None:
     app.dependency_overrides.clear()
 
 
-def test_chat_happy_path_returns_echo() -> None:
+async def _null_db_gen(*args, **kwargs):
+    yield None
+
+
+_AGENT_REPLY = "Here is the answer."
+_MOCK_AGENT_RESULT = AgentResult(reply=_AGENT_REPLY, escalated=False, iterations_used=1)
+_FAQ_DECISION = RouterDecision(
+    action="agent", label="faq_rag", confidence=0.95, routed_to="agent"
+)
+
+
+def _patch_chat_pipeline():
+    """Context manager that patches all external calls in the widget chat route."""
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(return_value=None)
+    app.state.redis.setex = AsyncMock()
+    app.state.llm = AsyncMock()
+    app.state.embedder = AsyncMock()
+    app.state.reranker = AsyncMock()
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+    stack = ExitStack()
+    stack.enter_context(_patch("app.api.routes.widget_chat._guardrails_check", new=AsyncMock(return_value=True)))
+    stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_FAQ_DECISION)))
+    stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
+    stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=AsyncMock(return_value=_MOCK_AGENT_RESULT)))
+    return stack
+
+
+def test_chat_happy_path_returns_assistant_reply() -> None:
     _wire_widget_session_dep()
-    response = client.post(
-        "/api/v1/widget/chat",
-        headers={"Authorization": f"Bearer {_mint_token()}"},
-        json={"message": "Hello"},
-    )
+    with _patch_chat_pipeline():
+        response = client.post(
+            "/api/v1/widget/chat",
+            headers={"Authorization": f"Bearer {_mint_token()}"},
+            json={"message": "Hello"},
+        )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["message"].startswith("You said:")
-    assert "Hello" in body["message"]
+    assert body["message"] == _AGENT_REPLY
     uuid.UUID(body["conversation_id"])
 
 
@@ -82,7 +115,7 @@ def test_chat_body_with_foreign_tenant_id_is_ignored_and_logged(caplog) -> None:
     `body_tenant_id_ignored` (no raw tenant ids per FR-015c)."""
     _wire_widget_session_dep()
     foreign_tenant_id = str(uuid.uuid4())
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("WARNING"), _patch_chat_pipeline():
         response = client.post(
             "/api/v1/widget/chat",
             headers={"Authorization": f"Bearer {_mint_token()}"},
@@ -94,7 +127,7 @@ def test_chat_body_with_foreign_tenant_id_is_ignored_and_logged(caplog) -> None:
     assert response.status_code == 200, response.text
     # The body field was ignored — request was served under the token's tenant.
     body = response.json()
-    assert "Hi" in body["message"]
+    assert body["message"] == _AGENT_REPLY
     # A structured log entry was emitted for operator visibility.
     assert any("body_tenant_id_ignored" in record.message for record in caplog.records)
     # The raw foreign tenant_id MUST NOT appear in any log line (FR-015c).
