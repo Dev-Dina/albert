@@ -126,6 +126,16 @@ jobs:
           SMOKE_TIMEOUT_SECONDS: "120"
         run: |
           cp .env.example .env
+          # Backend lifespan constructs a genai.Client at startup which
+          # raises ValueError on an empty api_key. Smoke only hits /health
+          # so the key never has to be valid — but it must be a non-empty
+          # string. The same applies to other model-provider keys that
+          # ship empty in .env.example. CI-only; do not propagate to prod.
+          {
+            echo "GEMINI_API_KEY=ci-dummy-not-a-real-key"
+            echo "GROQ_API_KEY=ci-dummy-not-a-real-key"
+            echo "COHERE_API_KEY=ci-dummy-not-a-real-key"
+          } >> .env
           bash scripts/smoke_test.sh
 
   # ─────────────────────────────────────────────────────────────────────

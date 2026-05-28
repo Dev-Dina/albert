@@ -23,6 +23,19 @@ import yaml
 
 _HARD_TIME_GATE = False  # flip to True once we have stable run-time data.
 
+# Every gate the pipeline is contractually required to report on
+# (contracts/ci-gate.contract.md). If any of these is missing from the
+# collected artifacts — usually because the gate job was skipped after smoke
+# failed — the summary synthesises an `error` row so the failure names the
+# specific gate(s) instead of going blank.
+_EXPECTED_GATES: tuple[str, ...] = (
+    "classifier",
+    "agent_tool_selection",
+    "rag",
+    "redteam_cross_tenant",
+    "redaction",
+)
+
 
 def _load_records(root: Path) -> list[dict]:
     records: list[dict] = []
@@ -93,28 +106,36 @@ def main() -> int:
     ]
 
     failed: list[str] = []
-    if not records:
-        lines.append("| _no gate artifacts collected_ | error | NA | NA |")
-        failed.append("no_artifacts")
-    else:
-        # Stable order: contract gates first, then anything else alphabetical.
-        order = [
-            "classifier",
-            "agent_tool_selection",
-            "rag",
-            "redteam_cross_tenant",
-            "redaction",
-        ]
-        records.sort(key=lambda r: (
-            order.index(r["gate"]) if r["gate"] in order else len(order),
-            r["gate"],
-        ))
-        for r in records:
-            lines.append(
-                f"| {r['gate']} | {r['status']} | {_fmt(r.get('observed'))} | {_fmt(r.get('threshold'))} |"
+
+    # Synthesise an error row for any contract-required gate that produced
+    # no artifact (typically because the job was skipped after smoke failed,
+    # so the per-job `if: failure()` backstop never ran). Without this the
+    # whole table reads as one ambiguous "no gate artifacts collected" row.
+    seen_gates = {r["gate"] for r in records}
+    for gate in _EXPECTED_GATES:
+        if gate not in seen_gates:
+            records.append(
+                {
+                    "gate": gate,
+                    "status": "error",
+                    "observed": None,
+                    "threshold": None,
+                    "detail": "no artifact uploaded (job skipped or crashed before backstop)",
+                }
             )
-            if r["status"] != "pass":
-                failed.append(r["gate"])
+
+    # Stable order: contract gates first, then anything else alphabetical.
+    order = list(_EXPECTED_GATES)
+    records.sort(key=lambda r: (
+        order.index(r["gate"]) if r["gate"] in order else len(order),
+        r["gate"],
+    ))
+    for r in records:
+        lines.append(
+            f"| {r['gate']} | {r['status']} | {_fmt(r.get('observed'))} | {_fmt(r.get('threshold'))} |"
+        )
+        if r["status"] != "pass":
+            failed.append(r["gate"])
 
     budget = _budget_row()
     if budget is not None:
