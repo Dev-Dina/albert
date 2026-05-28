@@ -19,6 +19,10 @@ def _get_current_tenant(request: Request) -> str:
 
     Until then tenant_id comes from X-Tenant-Id header — local dev only.
     Never trust this in production.
+
+    OWNER C AUDIT NOTE (Owner A/B — not changed here): this route is mounted on
+    main; trusting a client-supplied X-Tenant-Id is a cross-tenant breach vector.
+    Replace with verified token-derived tenant before any non-dev use.
     """
     tenant_id = request.headers.get("X-Tenant-Id")
     if not tenant_id:

@@ -79,5 +79,9 @@ async def escalate(
     # )
     # return {"ticket_id": str(flag.id), "status": "escalated"}
 
+    # OWNER C AUDIT NOTE (Owner A/B integration — not implemented here): the
+    # conversations table exists (migration 0003). This must persist a tenant-scoped
+    # escalation/flag (tenant_id + conversation_id from verified context), OR be
+    # explicitly marked out of scope for the submission. It currently writes nothing.
     logger.warning("escalate is a stub — no DB write performed tenant=%s", tenant_id)
     return {"ticket_id": None, "status": "stub_no_write"}

@@ -147,6 +147,10 @@ uv run --project guardrails python -m ruff check evals/redteam_cross_tenant/run.
 | DL/ONNX TF-IDF + MLPClassifier | `0.9834` | `0.0419 ms/item` |
 | Gemini zero-shot (`gemini-2.5-flash-lite`) | `0.503639` | `1107.26 ms/item` |
 
+- Official recorded LLM baseline: `gemini-2.5-flash-lite` (precomputed, committed
+  artifacts). Earlier `gemini-2.0-flash` references were planning/provider-version
+  references, not the submitted artifact (provider model-lifecycle update). CI does
+  not call Gemini; it consumes committed artifacts and the model card.
 - Shipped classifier: Classical TF-IDF + LogisticRegression.
 - Challenger: DL/ONNX TF-IDF + MLPClassifier.
 - LLM routing rejected for production: slower, provider-dependent,

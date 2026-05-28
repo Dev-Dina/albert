@@ -118,6 +118,12 @@ never committed, logged, traced, or written to metrics/model cards.
 `intent-zero-shot-v2-balanced-labels`, same 600-item held-out split as the
 classical and DL/ONNX baselines.
 
+`gemini-2.5-flash-lite` is the official recorded baseline for this submission.
+Earlier `gemini-2.0-flash` references were planning/provider-version references,
+not this committed artifact (provider model-lifecycle update — older
+experimental/preview model IDs can be superseded). CI does not call Gemini; it
+uses the committed evaluation artifacts and the model card.
+
 | Baseline | Macro-F1 | Latency |
 |---|---:|---:|
 | Classical TF-IDF + LogisticRegression | `0.971762` | `0.0101 ms/item` |
