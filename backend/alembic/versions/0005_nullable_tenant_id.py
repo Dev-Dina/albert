@@ -7,16 +7,16 @@ Changes:
 - DROP NOT NULL on tenant_memberships.tenant_id
 - Add a partial unique index to prevent duplicate platform memberships per user
 
-Revision ID: 0004
-Revises: 0003
+Revision ID: 0005_nullable_tenant_id
+Revises: 0004_widget_tables
 """
 
 from __future__ import annotations
 
 from alembic import op
 
-revision = "0004"
-down_revision = "0003"
+revision = "0005_nullable_tenant_id"
+down_revision = "0004_widget_tables"
 branch_labels = None
 depends_on = None
 
