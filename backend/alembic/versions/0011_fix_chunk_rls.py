@@ -1,7 +1,7 @@
 """Fix RAG chunk table RLS policies — missing guards in 0006.
 
-Revision ID: 0010_fix_chunk_rls
-Revises: 0009_fix_widget_rls
+Revision ID: 0011_fix_chunk_rls
+Revises: 0010_fix_widget_rls
 Create Date: 2026-05-27
 
 Migration 0006 created RLS policies on parent_chunks and child_chunks with
@@ -36,8 +36,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0010_fix_chunk_rls"
-down_revision: str | None = "0009_fix_widget_rls"
+revision: str = "0011_fix_chunk_rls"
+down_revision: str | None = "0010_fix_widget_rls"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

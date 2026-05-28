@@ -1,7 +1,7 @@
 """Grant EXECUTE on lookup_widget_by_public_id to the connecting role.
 
-Revision ID: 0011_grant_widget_function
-Revises: 0010_fix_chunk_rls
+Revision ID: 0012_grant_widget_function
+Revises: 0011_fix_chunk_rls
 Create Date: 2026-05-27
 
 Migration 0004 created the SECURITY DEFINER function
@@ -31,8 +31,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0011_grant_widget_function"
-down_revision: str | None = "0010_fix_chunk_rls"
+revision: str = "0012_grant_widget_function"
+down_revision: str | None = "0011_fix_chunk_rls"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -1,7 +1,7 @@
 """Fix widget table RLS policies — wrong session variable in 0004.
 
-Revision ID: 0009_fix_widget_rls
-Revises: 0008_cost_events_drop_rls
+Revision ID: 0010_fix_widget_rls
+Revises: 0009_cost_events_drop_rls
 Create Date: 2026-05-27
 
 Migration 0004 created RLS policies on the four widget tables using
@@ -26,8 +26,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0009_fix_widget_rls"
-down_revision: str | None = "0008_cost_events_drop_rls"
+revision: str = "0010_fix_widget_rls"
+down_revision: str | None = "0009_cost_events_drop_rls"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -4,20 +4,20 @@ The albert_app role is created by postgres/init/01_create_app_role.sql on
 container first-start with NOSUPERUSER + NOBYPASSRLS so that PostgreSQL
 enforces FORCE ROW LEVEL SECURITY on every query the app makes.
 
-This migration grants access to all tables that already exist (0001–0011).
+This migration grants access to all tables that already exist (0001–0012).
 Tables created by future migrations get grants automatically via
 ALTER DEFAULT PRIVILEGES set in the init SQL.
 
-Revision ID: 0012_grant_app_role
-Revises: 0011_grant_widget_function
+Revision ID: 0013_grant_app_role
+Revises: 0012_grant_widget_function
 """
 
 from __future__ import annotations
 
 from alembic import op
 
-revision = "0012_grant_app_role"
-down_revision = "0011_grant_widget_function"
+revision = "0013_grant_app_role"
+down_revision = "0012_grant_widget_function"
 branch_labels = None
 depends_on = None
 

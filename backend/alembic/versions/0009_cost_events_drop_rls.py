@@ -1,7 +1,7 @@
 """Remove RLS from cost_events — platform-readable billing table.
 
-Revision ID: 0008_cost_events_drop_rls
-Revises: 0007_content_chunks_pgvector
+Revision ID: 0009_cost_events_drop_rls
+Revises: 0008_fix_origin_check_constraint
 Create Date: 2026-05-27
 
 cost_events contains numeric billing data only (tokens, cost_usd).
@@ -21,8 +21,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0008_cost_events_drop_rls"
-down_revision: str | None = "0007_content_chunks_pgvector"
+revision: str = "0009_cost_events_drop_rls"
+down_revision: str | None = "0008_fix_origin_check_constraint"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
