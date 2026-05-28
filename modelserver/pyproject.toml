@@ -5,6 +5,12 @@ description = "Albert modelserver service shell."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
+    "joblib",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-instrumentation-fastapi",
+    "scikit-learn",
     "uvicorn",
 ]
 

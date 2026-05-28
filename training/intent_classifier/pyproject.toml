@@ -1,0 +1,21 @@
+[project]
+name = "albert-intent-classifier-training"
+version = "0.1.0"
+description = "Offline training utilities for the Owner C visitor-intent classifier."
+requires-python = ">=3.12"
+dependencies = [
+    "httpx",
+    "joblib",
+    "numpy",
+    "onnxruntime",
+    "scikit-learn",
+    "skl2onnx",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 100

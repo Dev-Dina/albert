@@ -1,0 +1,50 @@
+{"id":"faq_rag_001","label":"faq_rag","text":"What are your opening hours on Saturday?"}
+{"id":"faq_rag_002","label":"faq_rag","text":"Where is your store located?"}
+{"id":"faq_rag_003","label":"faq_rag","text":"Do you offer delivery for online orders?"}
+{"id":"faq_rag_004","label":"faq_rag","text":"Can I return an item bought last week?"}
+{"id":"faq_rag_005","label":"faq_rag","text":"What payment methods do you accept?"}
+{"id":"faq_rag_006","label":"faq_rag","text":"Do you have parking near the business?"}
+{"id":"faq_rag_007","label":"faq_rag","text":"How much does the basic service package cost?"}
+{"id":"faq_rag_008","label":"faq_rag","text":"Is there a warranty on repairs?"}
+{"id":"faq_rag_009","label":"faq_rag","text":"What is included in the standard appointment?"}
+{"id":"faq_rag_010","label":"faq_rag","text":"Can I see the menu and prices?"}
+{"id":"lead_capture_001","label":"lead_capture","text":"Can someone contact me about a quote?"}
+{"id":"lead_capture_002","label":"lead_capture","text":"I want to book a consultation for next week."}
+{"id":"lead_capture_003","label":"lead_capture","text":"Please have sales reach out to discuss pricing."}
+{"id":"lead_capture_004","label":"lead_capture","text":"I would like to schedule a demo."}
+{"id":"lead_capture_005","label":"lead_capture","text":"Can I request an estimate for my project?"}
+{"id":"lead_capture_006","label":"lead_capture","text":"I am interested in signing up for a plan."}
+{"id":"lead_capture_007","label":"lead_capture","text":"Please send me information so I can become a customer."}
+{"id":"lead_capture_008","label":"lead_capture","text":"Can your team call me back about availability?"}
+{"id":"lead_capture_009","label":"lead_capture","text":"I want to reserve an appointment slot."}
+{"id":"lead_capture_010","label":"lead_capture","text":"Help me start an order with your business."}
+{"id":"human_escalate_001","label":"human_escalate","text":"I need to speak with a human agent."}
+{"id":"human_escalate_002","label":"human_escalate","text":"Please transfer me to a manager."}
+{"id":"human_escalate_003","label":"human_escalate","text":"This issue is urgent and I need support now."}
+{"id":"human_escalate_004","label":"human_escalate","text":"Can a real person help with my complaint?"}
+{"id":"human_escalate_005","label":"human_escalate","text":"I want to escalate this problem to support."}
+{"id":"human_escalate_006","label":"human_escalate","text":"The bot is not helping, connect me to staff."}
+{"id":"human_escalate_007","label":"human_escalate","text":"I need a supervisor for a billing dispute."}
+{"id":"human_escalate_008","label":"human_escalate","text":"Get me an operator please."}
+{"id":"human_escalate_009","label":"human_escalate","text":"I have an emergency and need immediate assistance."}
+{"id":"human_escalate_010","label":"human_escalate","text":"Can customer service take over this chat?"}
+{"id":"spam_001","label":"spam","text":"Buy cheap followers now limited offer."}
+{"id":"spam_002","label":"spam","text":"You won a prize click this suspicious link."}
+{"id":"spam_003","label":"spam","text":"Make money fast with no work today."}
+{"id":"spam_004","label":"spam","text":"Free crypto giveaway claim your bonus."}
+{"id":"spam_005","label":"spam","text":"Promote your website with fake traffic."}
+{"id":"spam_006","label":"spam","text":"Lowest price pills available online now."}
+{"id":"spam_007","label":"spam","text":"Random marketing blast buy buy buy."}
+{"id":"spam_008","label":"spam","text":"Congratulations you are selected for a fake reward."}
+{"id":"spam_009","label":"spam","text":"Work from home scam offer earn thousands."}
+{"id":"spam_010","label":"spam","text":"Visit my unrelated advertisement page."}
+{"id":"other_agent_001","label":"other_agent","text":"Tell me a joke about computers."}
+{"id":"other_agent_002","label":"other_agent","text":"Can you summarize this paragraph for me?"}
+{"id":"other_agent_003","label":"other_agent","text":"What is the weather like today?"}
+{"id":"other_agent_004","label":"other_agent","text":"Help me write a polite email."}
+{"id":"other_agent_005","label":"other_agent","text":"I am not sure what I need yet."}
+{"id":"other_agent_006","label":"other_agent","text":"Can you explain how chatbots work?"}
+{"id":"other_agent_007","label":"other_agent","text":"What should I ask next?"}
+{"id":"other_agent_008","label":"other_agent","text":"Translate this sentence into another language."}
+{"id":"other_agent_009","label":"other_agent","text":"Give me general advice about planning my day."}
+{"id":"other_agent_010","label":"other_agent","text":"I want to ask something unrelated to this business."}

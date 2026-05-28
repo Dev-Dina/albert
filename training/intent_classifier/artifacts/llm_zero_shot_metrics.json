@@ -1,0 +1,148 @@
+{
+  "classification_report": {
+    "accuracy": 0.5416666666666666,
+    "faq_rag": {
+      "f1-score": 0.4713114754098361,
+      "precision": 0.3125,
+      "recall": 0.9583333333333334,
+      "support": 120.0
+    },
+    "human_escalate": {
+      "f1-score": 0.5549738219895288,
+      "precision": 0.7464788732394366,
+      "recall": 0.44166666666666665,
+      "support": 120.0
+    },
+    "lead_capture": {
+      "f1-score": 0.4720496894409938,
+      "precision": 0.926829268292683,
+      "recall": 0.31666666666666665,
+      "support": 120.0
+    },
+    "macro avg": {
+      "f1-score": 0.5036394168391018,
+      "precision": 0.7304949616397571,
+      "recall": 0.5416666666666666,
+      "support": 600.0
+    },
+    "other_agent": {
+      "f1-score": 0.032520325203252036,
+      "precision": 0.6666666666666666,
+      "recall": 0.016666666666666666,
+      "support": 120.0
+    },
+    "spam": {
+      "f1-score": 0.9873417721518988,
+      "precision": 1.0,
+      "recall": 0.975,
+      "support": 120.0
+    },
+    "weighted avg": {
+      "f1-score": 0.5036394168391018,
+      "precision": 0.7304949616397572,
+      "recall": 0.5416666666666666,
+      "support": 600.0
+    }
+  },
+  "confusion_matrix": {
+    "faq_rag": {
+      "faq_rag": 115,
+      "human_escalate": 4,
+      "lead_capture": 1,
+      "other_agent": 0,
+      "spam": 0
+    },
+    "human_escalate": {
+      "faq_rag": 66,
+      "human_escalate": 53,
+      "lead_capture": 1,
+      "other_agent": 0,
+      "spam": 0
+    },
+    "lead_capture": {
+      "faq_rag": 75,
+      "human_escalate": 6,
+      "lead_capture": 38,
+      "other_agent": 1,
+      "spam": 0
+    },
+    "other_agent": {
+      "faq_rag": 110,
+      "human_escalate": 8,
+      "lead_capture": 0,
+      "other_agent": 2,
+      "spam": 0
+    },
+    "spam": {
+      "faq_rag": 2,
+      "human_escalate": 0,
+      "lead_capture": 1,
+      "other_agent": 0,
+      "spam": 117
+    }
+  },
+  "confusion_matrix_label_order": [
+    "faq_rag",
+    "lead_capture",
+    "human_escalate",
+    "spam",
+    "other_agent"
+  ],
+  "cost_estimate_usd": null,
+  "cost_note": "Set --input-price-per-1m and --output-price-per-1m to record a dollar estimate; API key is never stored.",
+  "dataset_path": "training\\intent_classifier\\data\\customer_support_intents_mapped.jsonl",
+  "evaluated_count": 600,
+  "evaluated_label_distribution": {
+    "faq_rag": 120,
+    "human_escalate": 120,
+    "lead_capture": 120,
+    "other_agent": 120,
+    "spam": 120
+  },
+  "failed_count": 0,
+  "is_partial": false,
+  "labels": [
+    "faq_rag",
+    "lead_capture",
+    "human_escalate",
+    "spam",
+    "other_agent"
+  ],
+  "latency_ms_per_item_estimate": 1107.2561400000025,
+  "limit": null,
+  "macro_f1": 0.5036394168391018,
+  "model_name": "gemini-2.5-flash-lite",
+  "notes": [
+    "Gemini zero-shot baseline; no fine-tuning.",
+    "Reads GEMINI_API_KEY only from environment.",
+    "Predictions omit raw message text and store text length/hash only.",
+    "Partial runs are dry-run evidence only and must not update the model card.",
+    "Owner A/Vault can inject GEMINI_API_KEY through env/settings later.",
+    "Production model choice remains pending Phase 5."
+  ],
+  "per_class_f1": {
+    "faq_rag": 0.4713114754098361,
+    "human_escalate": 0.5549738219895288,
+    "lead_capture": 0.4720496894409938,
+    "other_agent": 0.032520325203252036,
+    "spam": 0.9873417721518988
+  },
+  "phase": "4E_llm_zero_shot_baseline",
+  "predicted_label_distribution": {
+    "faq_rag": 368,
+    "human_escalate": 71,
+    "lead_capture": 41,
+    "other_agent": 3,
+    "spam": 117
+  },
+  "prediction_path": "training\\intent_classifier\\artifacts\\llm_zero_shot_predictions.jsonl",
+  "prompt_version": "intent-zero-shot-v2-balanced-labels",
+  "provider": "gemini",
+  "sample_per_class": null,
+  "split_path": "training\\intent_classifier\\artifacts\\classical_split.json",
+  "split_source": "reused exact test_ids from classical_split.json",
+  "token_usage": {
+    "candidate_tokens": 7637,
+    "prompt_tokens": 198659
+  }
+}

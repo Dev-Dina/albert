@@ -1,0 +1,33 @@
+{
+  "bootstrap_scaffold": "training/intent_classifier/examples/bootstrap/bootstrap_intents.jsonl",
+  "bootstrap_scaffold_used_for_training": false,
+  "dedupe_normalized_text": true,
+  "label_distribution": {
+    "faq_rag": 400,
+    "human_escalate": 400,
+    "lead_capture": 400,
+    "other_agent": 400,
+    "spam": 400
+  },
+  "label_mapping_path": "training/intent_classifier/label_mapping.yaml",
+  "max_examples_per_label": 400,
+  "processed_dataset_path": "training\\intent_classifier\\data\\customer_support_intents_mapped.jsonl",
+  "processed_dataset_sha256": "848697bc0d6f6a2a152a89a83dd00e5123dacdcbff86a6a449f84233e2af64ae",
+  "random_seed": 42,
+  "source_datasets": [
+    {
+      "name": "bitext/Bitext-customer-support-llm-chatbot-training-dataset",
+      "notes": "Public customer-service intent dataset; Bitext describes it as hybrid synthetic support data.",
+      "raw_path": "training\\intent_classifier\\data\\raw\\Bitext_Sample_Customer_Support_Training_Dataset_27K_responses-v11.csv",
+      "raw_sha256": "6f81102b0100b97b8468eb04368033a23206bf1fde9d53500d5806ec1001a434",
+      "url": "https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset/resolve/main/Bitext_Sample_Customer_Support_Training_Dataset_27K_responses-v11.csv"
+    },
+    {
+      "name": "UCI SMS Spam Collection",
+      "notes": "Public spam supplement because Bitext has no spam/junk intent.",
+      "raw_path": "training\\intent_classifier\\data\\raw\\smsspamcollection.zip",
+      "raw_sha256": "1587ea43e58e82b14ff1f5425c88e17f8496bfcdb67a583dbff9eefaf9963ce3",
+      "url": "https://archive.ics.uci.edu/ml/machine-learning-databases/00228/smsspamcollection.zip"
+    }
+  ]
+}

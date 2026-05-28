@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     guardrails_url: str = "http://guardrails:8010"
     service_auth_token: SecretStr = SecretStr("dev-service-token")
 
+    otel_enabled: bool = False
+    otel_service_name: str = "albert-backend"
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_environment: str = "local"
+    otel_traces_exporter: str = "otlp"
+    jaeger_ui_base_url: str = "http://localhost:16686"
+    jaeger_query_base_url: str = "http://localhost:16686"
+
     # Widget auth (spec 001-widget-auth-admin-cicd). Restored after a prior
     # main-merge dropped them; still referenced by app.core.security and
     # app.services.widget_session_service.
@@ -46,6 +54,8 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr = SecretStr("dev-gemini-key-change-me")
     gemini_model: str = "gemini-2.0-flash"
     gemini_embedding_model: str = "text-embedding-004"
+    groq_api_key: SecretStr | None = None
+    groq_model: str = "llama-3.1-8b-instant"
     agent_max_iterations: int = 5
     agent_max_tokens_per_turn: int = 1024
     retrieval_top_k: int = 5
