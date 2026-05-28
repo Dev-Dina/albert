@@ -11,7 +11,7 @@ _MAX_TURNS = 10
 
 
 def _redact(text: str) -> str:
-    # TODO: swap with Owner C's redactor when delivered
+    # TODO(Ali): redactor delivered — call app.core.redaction.redact() before Redis write.
     return text
 
 

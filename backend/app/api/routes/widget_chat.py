@@ -66,11 +66,8 @@ async def post_widget_chat(
             },
         )
 
-    # OWNER C AUDIT NOTE (Owner B integration — not implemented here): this echo
-    # stub must be replaced with the real path: token tenant -> classifier/router
-    # -> agent/RAG/tools -> guardrails OUTPUT check -> response. The Owner C
-    # guardrails sidecar is ready at POST /guardrails/input and /guardrails/output
-    # (Authorization: Bearer <SERVICE_AUTH_TOKEN>, fail closed on error/non-200).
+    # TODO(Ali): replace echo stub with real path — token tenant → router/classifier
+    # → agent/RAG/tools → guardrails output check → response.
     conversation_id = payload.conversation_id or uuid.uuid4()
     logger.info(
         "widget_chat",

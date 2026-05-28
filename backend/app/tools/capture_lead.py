@@ -72,24 +72,9 @@ async def capture_lead(*, tenant_id: str, name: str, contact: str, intent: str) 
 
     CaptureLeadArgs(name=name, contact=contact, intent=intent)
 
-    # TODO: rate-limit check per visitor/session before writing
-    # if await _rate_limit_exceeded(tenant_id=tenant_id):
-    #     return {"status": "rate_limited", "lead_id": None}
-
-    # TODO: replace with real repo write once Owner A delivers Lead model:
-    # from app.repos.lead_repo import lead_repo
-    # lead = await lead_repo.create(
-    #     tenant_id=tenant_id,
-    #     name=args.name,
-    #     contact=args.contact,
-    #     intent=args.intent,
-    # )
-    # return {"lead_id": str(lead.id), "status": "captured"}
-
-    # OWNER C AUDIT NOTE (Owner A/B integration — not implemented here): the Lead
-    # model + leads table now exist (app.db.models.lead, migration 0003). This must
-    # persist a tenant-scoped lead (tenant_id from verified context, never LLM
-    # output) with per-visitor/session write rate-limiting, OR be explicitly marked
-    # out of scope for the submission. It currently writes nothing.
+    # TODO(Ali): rate-limit writes per visitor/session before persisting.
+    # TODO(Ali): persist tenant-scoped lead (Lead model + leads table exist,
+    # migration 0003; tenant_id from verified context, never LLM output) or mark
+    # out of scope. Currently writes nothing.
     logger.warning("capture_lead is a stub — no DB write performed tenant=%s", tenant_id)
     return {"lead_id": None, "status": "stub_no_write"}

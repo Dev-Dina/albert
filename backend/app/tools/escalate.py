@@ -69,19 +69,8 @@ async def escalate(
 
     EscalateArgs(reason=reason, summary=summary)
 
-    # TODO: replace with real repo write once Owner A delivers Conversation model:
-    # from app.repos.conversation_repo import conversation_repo
-    # flag = await conversation_repo.flag_for_escalation(
-    #     tenant_id=tenant_id,
-    #     conversation_id=conversation_id,
-    #     reason=args.reason,
-    #     summary=args.summary,
-    # )
-    # return {"ticket_id": str(flag.id), "status": "escalated"}
-
-    # OWNER C AUDIT NOTE (Owner A/B integration — not implemented here): the
-    # conversations table exists (migration 0003). This must persist a tenant-scoped
-    # escalation/flag (tenant_id + conversation_id from verified context), OR be
-    # explicitly marked out of scope for the submission. It currently writes nothing.
+    # TODO(Ali): persist tenant-scoped escalation/flag (conversations table exists,
+    # migration 0003; tenant_id + conversation_id from verified context) or mark out
+    # of scope. Currently writes nothing.
     logger.warning("escalate is a stub — no DB write performed tenant=%s", tenant_id)
     return {"ticket_id": None, "status": "stub_no_write"}
