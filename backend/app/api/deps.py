@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
+from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,7 @@ from app.db.models.membership import TenantMembership
 from app.db.models.user import User
 from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion
 from app.db.session import get_db
+from app.tenancy.rls import clear_tenant_context, set_tenant_context
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -52,6 +53,9 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None or not user.is_active:
         raise _credentials_exc
+    # Hydrate the transient platform_role from the verified token claim so
+    # /auth/me returns the correct role without an extra membership query.
+    user.platform_role = payload.get("role")
     return user
 
 
@@ -106,7 +110,7 @@ async def get_widget_session(
 ) -> AsyncIterator[WidgetSessionClaims]:
     """Resolve a widget visitor's verified session claims.
 
-    Sets ``app.tenant_id`` on the request's DB session so all subsequent
+    Sets ``app.current_tenant`` on the request's DB session so all subsequent
     tenant-scoped queries are gated by RLS for the lifetime of the request.
     Returns 401 on any failure; NEVER leaks why (signature mismatch vs.
     expiry vs. rotation vs. origin re-check failure).
@@ -122,8 +126,6 @@ async def get_widget_session(
     # Parse-only first pass to learn (tenant_id, kvr). Signature check happens
     # below with the resolved key material.
     try:
-        from jose import jwt
-
         unverified = jwt.get_unverified_claims(token)
         tenant_id = uuid.UUID(str(unverified["tnt"]))
         kvr_claim = int(unverified["kvr"])
@@ -162,5 +164,8 @@ async def get_widget_session(
     if not origin_ok:
         raise _widget_credentials_exc
 
-    async with tenant_context(db, claims.tenant_id):
+    await set_tenant_context(db, claims.tenant_id)
+    try:
         yield claims
+    finally:
+        await clear_tenant_context(db)

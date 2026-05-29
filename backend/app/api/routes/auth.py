@@ -30,6 +30,7 @@ from app.db.models.membership import TenantMembership
 from app.db.models.user import User
 from app.db.models.widget_config import WidgetConfig
 from app.db.session import get_db
+from app.ratelimit import check_auth_rate_limit
 from app.schemas.auth import CurrentUserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -72,6 +73,7 @@ class WidgetTokenRequest(BaseModel):
 async def register(
     body: RegisterRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _rl: Annotated[None, Depends(check_auth_rate_limit)],
 ) -> RegisterResponse:
     """Create a new user account.
 
@@ -100,6 +102,7 @@ async def register(
 async def login(
     body: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _rl: Annotated[None, Depends(check_auth_rate_limit)],
 ) -> TokenResponse:
     """Authenticate with email + password and return a signed JWT.
 
@@ -162,6 +165,7 @@ async def me(
 async def widget_token(
     body: WidgetTokenRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _rl: Annotated[None, Depends(check_auth_rate_limit)],
 ) -> TokenResponse:
     """Exchange a public widget_id for a short-lived signed JWT.
 

@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import select  # noqa: E402
 
-from app.core.security import hash_password  # noqa: E402
+from app.auth.users import hash_password  # noqa: E402
 from app.db.models.user import User  # noqa: E402
 from app.db.session import AsyncSessionLocal  # noqa: E402
 

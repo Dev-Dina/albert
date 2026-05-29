@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -19,8 +20,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Tenant context / connection string come from verified settings, never from CLI input.
-config.set_main_option("sqlalchemy.url", settings.database_url or "")
+# Migrations run as the superuser (DATABASE_MIGRATE_URL); the app uses the
+# restricted albert_app role (DATABASE_URL).  Fall back to DATABASE_URL when
+# DATABASE_MIGRATE_URL is absent (e.g. CI environments without the split).
+_migrate_url = os.getenv("DATABASE_MIGRATE_URL") or settings.database_url or ""
+config.set_main_option("sqlalchemy.url", _migrate_url)
 
 target_metadata = Base.metadata
 
