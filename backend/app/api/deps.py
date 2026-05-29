@@ -17,6 +17,7 @@ from app.core.security import (
 from app.core.tenant_context import tenant_context
 from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion
 from app.db.session import get_db
+from app.tenancy.rls import clear_tenant_context, set_tenant_context
 
 
 async def get_admin_tenant_id(
@@ -84,8 +85,6 @@ async def get_widget_session(
     # Parse-only first pass to learn (tenant_id, kvr). Signature check happens
     # below with the resolved key material.
     try:
-        from jose import jwt
-
         unverified = jwt.get_unverified_claims(token)
         tenant_id = uuid.UUID(str(unverified["tnt"]))
         kvr_claim = int(unverified["kvr"])
@@ -134,3 +133,5 @@ async def get_widget_session(
             raise _widget_credentials_exc
 
         yield claims
+    finally:
+        await clear_tenant_context(db)

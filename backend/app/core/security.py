@@ -21,6 +21,18 @@ from app.core.config import settings
 _WIDGET_TOKEN_ALG = "HS256"
 
 
+def decode_access_token(token: str) -> dict:
+    """Decode and validate a JWT. Raises jose.JWTError if invalid or expired.
+
+    Used by widget-session path (api/deps.py) which expects the exception-raising
+    contract. Standard tenant routes use app.auth.users.decode_access_token which
+    returns None on failure instead.
+    """
+    return jwt.decode(
+        token, settings.jwt_secret.get_secret_value(), algorithms=[settings.jwt_algorithm]
+    )
+
+
 @dataclass(frozen=True)
 class WidgetSessionClaims:
     """Verified claims extracted from a widget session token (data-model.md E5)."""

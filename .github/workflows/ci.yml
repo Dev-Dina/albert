@@ -310,12 +310,87 @@ jobs:
           if-no-files-found: warn
 
   # ─────────────────────────────────────────────────────────────────────
+  # Unit tests — fast, no database required
+  # ─────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Install backend dependencies
+        run: uv sync --frozen
+        working-directory: backend
+      - name: Run unit tests
+        run: uv run pytest tests/ -v --tb=short
+        working-directory: backend
+        env:
+          JWT_SECRET: ci-test-secret-not-real
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Isolation evals — gate; requires live Postgres with migrations
+  # ─────────────────────────────────────────────────────────────────────
+  isolation-evals:
+    name: Isolation Evals (Gate)
+    runs-on: ubuntu-latest
+    needs: validate_thresholds
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: albert
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d albert"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Install backend dependencies
+        run: uv sync --frozen
+        working-directory: backend
+      - name: Install PostgreSQL client
+        run: sudo apt-get install -y postgresql-client
+      - name: Create albert_app role (non-superuser)
+        run: |
+          psql postgresql://postgres:postgres@localhost:5432/albert \
+            -f postgres/init/01_create_app_role.sql
+      - name: Run migrations (as postgres superuser)
+        run: uv run alembic upgrade head
+        working-directory: backend
+        env:
+          DATABASE_MIGRATE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
+          DATABASE_URL: postgresql+asyncpg://albert_app:albert_app_pass@localhost:5432/albert
+          JWT_SECRET: ci-test-secret-not-real
+      - name: Run isolation evals
+        run: uv run pytest ../evals/isolation/ -v --tb=short
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://albert_app:albert_app_pass@localhost:5432/albert
+          DATABASE_MIGRATE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
+          JWT_SECRET: ci-test-secret-not-real
+
+  # ─────────────────────────────────────────────────────────────────────
   # Summary — always runs, fails the build if any gate failed.
   # ─────────────────────────────────────────────────────────────────────
   summary:
     name: CI summary
     runs-on: ubuntu-latest
-    needs: [classifier, tool_selection, rag, redteam_cross_tenant, redaction]
+    needs: [classifier, tool_selection, rag, redteam_cross_tenant, redaction, unit-tests, isolation-evals]
     if: always()
     steps:
       - uses: actions/checkout@v4

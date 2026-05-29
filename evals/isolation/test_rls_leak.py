@@ -279,13 +279,9 @@ async def test_tenant_a_cannot_read_tenant_b_rows(
     result = await db.execute(text("SELECT id FROM conversations"))
     visible_ids = {row[0] for row in result.fetchall()}
 
-    assert str(conv_b) in str(visible_ids) or any(
-        str(conv_b) in str(v) for v in visible_ids
-    ), "Tenant B's conversation should be visible to tenant B."
+    assert conv_b in visible_ids, "Tenant B's conversation should be visible to tenant B."
 
-    assert not any(
-        str(conv_a) in str(v) for v in visible_ids
-    ), (
+    assert conv_a not in visible_ids, (
         "Tenant A's conversation is visible to tenant B — RLS is not enforced! "
         "Check that ENABLE ROW LEVEL SECURITY and FORCE ROW LEVEL SECURITY are set, "
         "the policy uses nullif(current_setting('app.current_tenant', true), '')::uuid, "
