@@ -121,6 +121,34 @@ def main() -> None:
     section("Copy-ready snippet")
     _render_copy_button(snippet.snippet, key=widget.id)
 
+    # The loader is served from the Albert backend origin; derive that origin so
+    # we can show a directly-openable local preview URL and the exact origin the
+    # admin must allow-list (the widget iframe + session both run from it).
+    preview_base = snippet.loader_url.rsplit("/widget.js", 1)[0]
+    preview_url = f"{preview_base}/widget/embed.html?widget_id={snippet.data_widget_id}"
+
+    section("Preview locally")
+    st.markdown(
+        f'<div class="albert-meta">'
+        f"<strong>1.</strong> On the <strong>Allowed Origins</strong> page, "
+        f"add <code>{preview_base}</code> (the widget iframe + session run from this "
+        "backend origin).<br>"
+        f"<strong>2.</strong> Open this URL to see the live widget:"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<a href="{preview_url}" target="_blank" rel="noopener" '
+        f'class="albert-mono">{preview_url}</a>',
+        unsafe_allow_html=True,
+    )
+    callout(
+        "To embed on your <em>own</em> page instead, paste the snippet above and also "
+        "add that page's origin (e.g. <code>http://localhost:8080</code>) to Allowed "
+        "Origins — the browser needs it to allow the widget to be framed there.",
+        level="info",
+    )
+
     section("Details")
     st.markdown(
         f'<div class="albert-meta">'

@@ -19,6 +19,37 @@ from app.clients.backend_client import (
 from app.lib.auth import clear_session, render_sidebar_account, require_session
 from app.lib.theme import apply_page_chrome, callout, section
 
+# The widget iframe + its session token-exchange both run from the Albert backend
+# origin, so that origin must be allow-listed for the widget to load locally.
+_LOCAL_PREVIEW_ORIGIN = "http://localhost:8000"
+
+
+def _normalize_origin(raw: str) -> str:
+    """Light client-side cleanup so common paste mistakes don't bounce as 422.
+
+    Trims whitespace and a trailing slash (the backend rejects trailing slashes).
+    Genuine paths/queries are left intact so the backend still returns a clear
+    validation error rather than us silently mangling the value.
+    """
+    return raw.strip().rstrip("/")
+
+
+def _add_origin(client: BackendClient, origin: str) -> bool:
+    try:
+        client.add_allowed_origin(origin)
+    except BackendUnauthorizedError:
+        clear_session()
+        st.rerun()
+        return False
+    except BackendError as exc:
+        callout(
+            f"Could not add <code>{origin}</code> — origins must be "
+            f"<code>scheme://host[:port]</code> with no path or trailing slash. {exc}",
+            level="danger",
+        )
+        return False
+    return True
+
 
 def main() -> None:
     apply_page_chrome("Allowed origins", icon="🛡️")
@@ -57,6 +88,22 @@ def main() -> None:
             icon="🪟",
         )
 
+    callout(
+        "<strong>Local preview tip:</strong> the widget iframe and its session "
+        f"token-exchange run from the Albert backend origin, so add "
+        f"<code>{_LOCAL_PREVIEW_ORIGIN}</code> to preview the widget locally "
+        "(open the backend embed page directly). To embed on your own page, also "
+        "add that page's origin (e.g. <code>http://localhost:8080</code>) — it's "
+        "needed so the browser allows the widget to be framed there.",
+        level="info",
+    )
+
+    has_preview_origin = any(o.origin == _LOCAL_PREVIEW_ORIGIN for o in origins)
+    if not has_preview_origin:
+        if st.button(f"Add {_LOCAL_PREVIEW_ORIGIN} (for local preview)", type="secondary"):
+            if _add_origin(client, _LOCAL_PREVIEW_ORIGIN):
+                st.rerun()
+
     section("Add an origin")
     with st.form("add-origin", clear_on_submit=True):
         col_input, col_button = st.columns([4, 1], gap="small")
@@ -67,24 +114,18 @@ def main() -> None:
                 label_visibility="collapsed",
                 help=(
                     "Examples: https://www.example.com · https://shop.example.com:8443 "
-                    "· http://localhost:8080. No paths, no wildcards, no trailing slashes."
+                    "· http://localhost:8080. No paths, no wildcards, no trailing slashes "
+                    "(a trailing slash is trimmed automatically)."
                 ),
             )
         with col_button:
             add = st.form_submit_button("Add", type="primary")
     if add:
-        if not new_origin.strip():
+        origin = _normalize_origin(new_origin)
+        if not origin:
             callout("Origin is required.", level="danger")
-        else:
-            try:
-                client.add_allowed_origin(new_origin.strip())
-            except BackendError as exc:
-                callout(
-                    f"Could not add origin (likely invalid format): {exc}",
-                    level="danger",
-                )
-            else:
-                st.rerun()
+        elif _add_origin(client, origin):
+            st.rerun()
 
     section("Current origins")
     if not origins:

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tenant_context import tenant_context
 from app.db.session import get_db
 from app.repositories import allowed_origin_repo, widget_repo
 
@@ -99,10 +100,16 @@ async def get_widget_embed(
             detail="widget bundle not built",
         )
 
+    # widget_repo.get_by_public_id uses a SECURITY DEFINER lookup (no tenant
+    # context needed). The allowed-origins read below hits a tenant-scoped table
+    # under FORCE ROW LEVEL SECURITY, so it must run with app.current_tenant set
+    # to the resolved tenant — otherwise the non-superuser runtime role sees zero
+    # rows and every embed wrongly 404s.
     lookup = await widget_repo.get_by_public_id(db, widget_id)
     if lookup is None or lookup.status != "enabled":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    origins_rows = await allowed_origin_repo.list_by_tenant(db, lookup.tenant_id)
+    async with tenant_context(db, lookup.tenant_id):
+        origins_rows = await allowed_origin_repo.list_by_tenant(db, lookup.tenant_id)
     frame_ancestors = [row.origin for row in origins_rows]
     if not frame_ancestors:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)

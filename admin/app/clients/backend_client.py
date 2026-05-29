@@ -152,6 +152,17 @@ class BackendClient:
         self.token = token
         return token
 
+    def me(self) -> dict[str, Any]:
+        """Return the authenticated identity (id, email, role, is_active).
+
+        ``role`` is the platform role: ``"tenant_manager"`` for platform managers,
+        ``null`` for tenant admins/members (whose role lives in tenant_memberships).
+        """
+        with self._client() as c:
+            r = c.get("/auth/me", headers=self._headers())
+        self._raise_for_status(r)
+        return r.json()
+
     # -- widgets -----------------------------------------------------------
 
     def list_widgets(self) -> list[AdminWidget]:
