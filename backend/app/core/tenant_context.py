@@ -1,4 +1,4 @@
-"""Per-request tenant context — thin shim over app.tenancy.rls.
+"""Per-request tenant context.
 
 Sets the PostgreSQL session-local variable ``app.current_tenant`` so RLS policies
 on tenant-scoped tables resolve to exactly the calling tenant's rows. A
@@ -6,11 +6,13 @@ request without a tenant context set will see zero rows from tenant-scoped
 tables (RLS policies ENABLE + FORCE), which is the intended fail-closed
 behavior.
 
-The variable set is ``app.current_tenant`` (matching all RLS policies).
-The previous implementation incorrectly used ``app.tenant_id``.
+If Owner A's platform helper lands at the same location, this module
+re-exports it instead of providing its own implementation.
 """
 
-from app.tenancy.rls import clear_tenant_context, set_tenant_context
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
