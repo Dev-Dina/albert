@@ -33,6 +33,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+from app.repos.chunk_repo import ChunkRepo
 from app.tenancy.rls import (
     clear_tenant_context,
     get_current_tenant_context,
@@ -44,21 +45,53 @@ from app.tenancy.rls import (
 # ---------------------------------------------------------------------------
 
 _TEST_DB_URL = settings.database_url or "postgresql+asyncpg://postgres:postgres@postgres:5432/albert"
+_RLS_EVAL_ROLE = "albert_rls_eval"
+_VECTOR_768 = "[" + ",".join(["0.1"] * 768) + "]"
 
 
-@pytest.fixture(scope="module")
-def engine():
-    import asyncio
+@pytest_asyncio.fixture
+async def engine():
     e = create_async_engine(_TEST_DB_URL, future=True, pool_size=2)
-    yield e
-    asyncio.run(e.dispose())
+    async with e.begin() as conn:
+        await conn.execute(
+            text(
+                f"""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_roles WHERE rolname = '{_RLS_EVAL_ROLE}'
+                    ) THEN
+                        CREATE ROLE {_RLS_EVAL_ROLE};
+                    END IF;
+                END
+                $$;
+                """
+            )
+        )
+        await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {_RLS_EVAL_ROLE}"))
+        await conn.execute(
+            text(
+                "GRANT SELECT, INSERT, UPDATE, DELETE "
+                f"ON ALL TABLES IN SCHEMA public TO {_RLS_EVAL_ROLE}"
+            )
+        )
+    try:
+        yield e
+    finally:
+        await e.dispose()
 
 
 @pytest_asyncio.fixture
 async def db(engine) -> AsyncSession:
     SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
     async with SessionLocal() as session:
-        yield session
+        await session.execute(text(f"SET ROLE {_RLS_EVAL_ROLE}"))
+        try:
+            yield session
+        finally:
+            await session.rollback()
+            await session.execute(text("RESET ROLE"))
+            await session.rollback()
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +106,59 @@ def tenant_a() -> uuid.UUID:
 @pytest.fixture
 def tenant_b() -> uuid.UUID:
     return uuid.UUID("bbbbbbbb-0000-0000-0000-000000000002")
+
+
+@pytest.fixture
+def tenant_c() -> uuid.UUID:
+    return uuid.UUID("cccccccc-0000-0000-0000-000000000003")
+
+
+async def _seed_live_chunk(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    parent_text: str,
+    child_text: str,
+) -> tuple[uuid.UUID, uuid.UUID]:
+    parent_id = uuid.uuid4()
+    child_id = uuid.uuid4()
+    await set_tenant_context(db, tenant_id)
+    await db.execute(
+        text(
+            "INSERT INTO parent_chunks (id, tenant_id, content_id, text, chunk_index) VALUES "
+            "(:id, :tid, :content_id, :text, 0)"
+        ),
+        {
+            "id": str(parent_id),
+            "tid": str(tenant_id),
+            "content_id": str(uuid.uuid4()),
+            "text": parent_text,
+        },
+    )
+    await db.execute(
+        text(
+            "INSERT INTO child_chunks "
+            "(id, tenant_id, parent_id, text, embedding, chunk_index) VALUES "
+            "(:id, :tid, :parent_id, :text, CAST(:embedding AS vector), 0)"
+        ),
+        {
+            "id": str(child_id),
+            "tid": str(tenant_id),
+            "parent_id": str(parent_id),
+            "text": child_text,
+            "embedding": _VECTOR_768,
+        },
+    )
+    return parent_id, child_id
+
+
+async def _visible_chunk_ids(db: AsyncSession) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
+    parent_result = await db.execute(text("SELECT id FROM parent_chunks"))
+    child_result = await db.execute(text("SELECT id FROM child_chunks"))
+    return (
+        {row[0] for row in parent_result.fetchall()},
+        {row[0] for row in child_result.fetchall()},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +303,32 @@ async def test_unset_context_returns_zero_rows(db: AsyncSession, tenant_a: uuid.
     This verifies the "fail closed" guarantee: no context = no data, not all data.
     An RLS policy that returns all rows on NULL/empty context is a critical defect.
     """
-    # Ensure context is empty.
-    await clear_tenant_context(db)
+    await db.execute(
+        text(
+            "INSERT INTO tenants (id, name, slug, status) VALUES "
+            "(:tid, 'Tenant A', 'tenant-a', 'active') "
+            "ON CONFLICT (id) DO NOTHING"
+        ),
+        {"tid": str(tenant_a)},
+    )
+
+    conv_id = uuid.uuid4()
+    await set_tenant_context(db, tenant_a)
+    await db.execute(
+        text(
+            "INSERT INTO conversations (id, tenant_id, session_id, status) VALUES "
+            "(:cid, :tid, 'sess-unset', 'open')"
+        ),
+        {"cid": str(conv_id), "tid": str(tenant_a)},
+    )
+
+    visible_result = await db.execute(
+        text("SELECT count(*) FROM conversations WHERE id = :cid"),
+        {"cid": str(conv_id)},
+    )
+    assert visible_result.scalar_one() == 1
+
+    await db.execute(text("RESET app.current_tenant"))
 
     result = await db.execute(text("SELECT count(*) FROM conversations"))
     count = result.scalar_one()
@@ -227,4 +337,84 @@ async def test_unset_context_returns_zero_rows(db: AsyncSession, tenant_a: uuid.
         f"Expected 0 rows with no tenant context set, got {count}. "
         "RLS policy must match no rows when app.current_tenant is unset."
     )
+
+    await clear_tenant_context(db)
+    result = await db.execute(text("SELECT count(*) FROM conversations"))
+    empty_count = result.scalar_one()
+    assert empty_count == 0, (
+        f"Expected 0 rows with empty tenant context set, got {empty_count}. "
+        "RLS policy must match no rows when app.current_tenant is empty."
+    )
+    await db.rollback()
+
+
+# ---------------------------------------------------------------------------
+# Test 5: live RAG chunk RLS fails closed and permits correct tenant search
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_live_chunk_rls_isolation_and_fail_closed(
+    db: AsyncSession,
+    tenant_a: uuid.UUID,
+    tenant_b: uuid.UUID,
+    tenant_c: uuid.UUID,
+) -> None:
+    """Live RAG chunk tables must isolate tenants and fail closed safely."""
+    parent_a, child_a = await _seed_live_chunk(
+        db,
+        tenant_a,
+        parent_text="Tenant A live parent",
+        child_text="Tenant A live child",
+    )
+    parent_b, child_b = await _seed_live_chunk(
+        db,
+        tenant_b,
+        parent_text="Tenant B live parent",
+        child_text="Tenant B live child",
+    )
+
+    await set_tenant_context(db, tenant_a)
+    visible_parents, visible_children = await _visible_chunk_ids(db)
+    assert parent_a in visible_parents
+    assert child_a in visible_children
+    assert parent_b not in visible_parents
+    assert child_b not in visible_children
+
+    await set_tenant_context(db, tenant_b)
+    visible_parents, visible_children = await _visible_chunk_ids(db)
+    assert parent_b in visible_parents
+    assert child_b in visible_children
+    assert parent_a not in visible_parents
+    assert child_a not in visible_children
+
+    await set_tenant_context(db, tenant_c)
+    visible_parents, visible_children = await _visible_chunk_ids(db)
+    assert visible_parents.isdisjoint({parent_a, parent_b})
+    assert visible_children.isdisjoint({child_a, child_b})
+
+    await db.execute(text("RESET app.current_tenant"))
+    visible_parents, visible_children = await _visible_chunk_ids(db)
+    assert visible_parents.isdisjoint({parent_a, parent_b})
+    assert visible_children.isdisjoint({child_a, child_b})
+
+    await clear_tenant_context(db)
+    visible_parents, visible_children = await _visible_chunk_ids(db)
+    assert visible_parents.isdisjoint({parent_a, parent_b})
+    assert visible_children.isdisjoint({child_a, child_b})
+
+    await set_tenant_context(db, tenant_a)
+    repo = ChunkRepo(db)
+    children = await repo.search_children(
+        embedding=[0.1] * 768,
+        tenant_id=tenant_a,
+        top_k=10,
+    )
+    child_ids = {child.id for child in children}
+    assert child_a in child_ids
+    assert child_b not in child_ids
+
+    parents = await repo.fetch_parents_by_ids([parent_a, parent_b], tenant_id=tenant_a)
+    parent_ids = {parent.id for parent in parents}
+    assert parent_ids == {parent_a}
+
     await db.rollback()

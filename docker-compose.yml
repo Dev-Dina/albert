@@ -73,6 +73,26 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Dev/demo bootstrap — opt-in via the `bootstrap` profile, so a plain
+  # `docker compose up -d` never starts it. Reuses the backend image (has the
+  # app + alembic + deps) and mounts repo-root scripts/. Runs migrations + seeds
+  # the platform manager, demo tenants/admins/widgets/origins, and Vault signing
+  # keys, then exits. Idempotent. Run:  docker compose --profile bootstrap up bootstrap
+  bootstrap:
+    profiles: ["bootstrap"]
+    build:
+      context: ./backend
+    env_file: .env
+    volumes:
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_started
+    command: ["python", "/app/scripts/bootstrap_dev.py"]
+    restart: "no"
+
   admin:
     build:
       context: ./admin

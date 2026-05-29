@@ -21,7 +21,14 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("users", sa.Column("platform_role", sa.String(), nullable=True))
+    # The only legal platform role is tenant_manager (or NULL for tenant-scoped users).
+    op.create_check_constraint(
+        "ck_users_platform_role",
+        "users",
+        "platform_role IS NULL OR platform_role = 'tenant_manager'",
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint("ck_users_platform_role", "users", type_="check")
     op.drop_column("users", "platform_role")

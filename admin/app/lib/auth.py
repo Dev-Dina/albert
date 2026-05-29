@@ -21,6 +21,7 @@ from app.lib.theme import callout
 _TOKEN_KEY = "albert.token"
 _TOKEN_EXP_KEY = "albert.token_exp"
 _EMAIL_KEY = "albert.email"
+_ROLE_KEY = "albert.platform_role"
 
 
 @dataclass(frozen=True)
@@ -53,8 +54,38 @@ def store_session(token: str, *, email: str, ttl_seconds: int = 3600) -> None:
 
 
 def clear_session() -> None:
-    for key in (_TOKEN_KEY, _TOKEN_EXP_KEY, _EMAIL_KEY):
+    for key in (_TOKEN_KEY, _TOKEN_EXP_KEY, _EMAIL_KEY, _ROLE_KEY):
         st.session_state.pop(key, None)
+
+
+def _block_platform_managers(client: BackendClient) -> None:
+    """Stop rendering with a clear notice if the signed-in user is a platform
+    manager. This console manages a single tenant's widgets/origins/config —
+    a ``tenant_manager`` has no tenant membership and would only hit 403s here.
+    The platform role is resolved from ``/auth/me`` (cached per session)."""
+    role = st.session_state.get(_ROLE_KEY)
+    if role is None:
+        try:
+            role = client.me().get("role") or ""
+        except BackendError:
+            # Don't hard-block on a transient error — feature pages will surface
+            # the real backend error if one persists.
+            return
+        st.session_state[_ROLE_KEY] = role
+    if role == "tenant_manager":
+        callout(
+            "You're signed in as a <strong>platform manager</strong>. This console "
+            "manages a single tenant's widgets, origins, and guardrails — managers "
+            "operate at the platform level (provision/suspend/erase tenants, aggregate "
+            "usage) and intentionally cannot access tenant content here. "
+            "Sign in as a tenant admin (e.g. <code>admin-acme@example.com</code>) to "
+            "manage Acme's widgets.",
+            level="warning",
+        )
+        if st.button("Sign out", key="albert-mgr-signout"):
+            clear_session()
+            st.rerun()
+        st.stop()
 
 
 def login_form(client: BackendClient) -> Session | None:
@@ -96,11 +127,17 @@ def login_form(client: BackendClient) -> Session | None:
 
 
 def require_session(client: BackendClient) -> Session:
-    """Top-of-page guard: render the login form if not signed in, else return."""
+    """Top-of-page guard: render the login form if not signed in, else return.
+
+    Also binds the token to ``client`` and blocks platform managers with a clear
+    notice (this is a tenant-admin console), so every page has one chokepoint.
+    """
     session = current_session()
     if session is None:
         login_form(client)
         st.stop()
+    client.token = session.token  # type: ignore[union-attr]
+    _block_platform_managers(client)
     return session  # type: ignore[return-value]
 
 

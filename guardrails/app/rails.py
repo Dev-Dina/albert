@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from app.redaction import redact
 from app.schemas import GuardrailRequest, GuardrailResponse, RedactionSummary
+from app.services import nemo_adapter
+from app.topic_policy import match_tenant_topics
 
 _SAFE_ALLOW_REASON = "guardrails_allow"
 _SAFE_REDACT_REASON = "guardrails_redact"
@@ -81,27 +83,35 @@ _PLATFORM_BLOCK_RULES: tuple[Rule, ...] = (
 )
 
 
-def evaluate_input(payload: GuardrailRequest) -> GuardrailResponse:
-    return _evaluate(payload, surface="input")
+async def evaluate_input(payload: GuardrailRequest) -> GuardrailResponse:
+    return await _evaluate(payload, surface="input")
 
 
-def evaluate_output(payload: GuardrailRequest) -> GuardrailResponse:
-    return _evaluate(payload, surface="output")
+async def evaluate_output(payload: GuardrailRequest) -> GuardrailResponse:
+    return await _evaluate(payload, surface="output")
 
 
-def _evaluate(payload: GuardrailRequest, surface: str) -> GuardrailResponse:
+async def _evaluate(payload: GuardrailRequest, surface: str) -> GuardrailResponse:
     text = payload.text
-    platform_categories = _platform_categories(text)
-    redaction = redact(text)
-    redaction_categories = _redaction_categories(redaction.counts)
 
+    # 1) Deterministic PLATFORM deny rules run FIRST and short-circuit, so NeMo /
+    #    tenant rails can only ADD a block — never weaken a platform deny.
+    platform_categories = _platform_categories(text)
     if platform_categories:
         return _block_response(platform_categories)
 
-    tenant_categories = _tenant_categories(text, payload)
+    # 2) Configurable tenant TOPICAL rails via NeMo Guardrails (no LLM/embeddings).
+    #    NeMo returns None only in local dev when unavailable → fall back to the
+    #    same deterministic matcher (CI/prod fail loud inside the adapter).
+    tenant_rails = payload.context.tenant_rails if payload.context else None
+    verdict = await nemo_adapter.evaluate_topic(text, tenant_rails)
+    tenant_categories = verdict.categories if verdict is not None else match_tenant_topics(text, tenant_rails)
     if tenant_categories:
         return _block_response(tenant_categories, platform_blocked=False, tenant_policy_applied=True)
 
+    # 3) Redaction last, before returning/logging.
+    redaction = redact(text)
+    redaction_categories = _redaction_categories(redaction.counts)
     if redaction.total:
         return GuardrailResponse(
             allowed=True,
@@ -141,23 +151,6 @@ def _platform_categories(text: str) -> list[str]:
     for rule in _PLATFORM_BLOCK_RULES:
         if rule.pattern.search(text):
             categories.append(rule.category)
-    return _dedupe(categories)
-
-
-def _tenant_categories(text: str, payload: GuardrailRequest) -> list[str]:
-    rails = payload.context.tenant_rails if payload.context and payload.context.tenant_rails else None
-    if rails is None:
-        return []
-    lowered = text.lower()
-    categories: list[str] = []
-    for topic in rails.blocked_topics:
-        topic = topic.strip().lower()
-        if topic and topic in lowered:
-            categories.append("tenant_blocked_topic")
-    if rails.allowed_topics:
-        allowed = [topic.strip().lower() for topic in rails.allowed_topics if topic.strip()]
-        if allowed and not any(topic in lowered for topic in allowed):
-            categories.append("tenant_allowed_topics")
     return _dedupe(categories)
 
 

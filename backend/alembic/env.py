@@ -11,20 +11,22 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # Ensure the backend package root is importable regardless of invocation CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.core.config import settings  # noqa: E402
-from app.db.base import Base  # noqa: E402
-from app.db import models  # noqa: E402,F401  (registers models on Base.metadata)
+from app.core.config import settings  
+from app.db.base import Base  
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Migrations run as the superuser (DATABASE_MIGRATE_URL); the app uses the
-# restricted albert_app role (DATABASE_URL).  Fall back to DATABASE_URL when
-# DATABASE_MIGRATE_URL is absent (e.g. CI environments without the split).
-_migrate_url = os.getenv("DATABASE_MIGRATE_URL") or settings.database_url or ""
-config.set_main_option("sqlalchemy.url", _migrate_url)
+# Connection string comes from verified settings, never from CLI input.
+# Migrations run DDL and create roles, so they need the admin/superuser login.
+# Prefer MIGRATION_DATABASE_URL (admin) when set; otherwise fall back to the
+# runtime DATABASE_URL. The runtime app role (DATABASE_URL) is intentionally a
+# non-superuser and cannot create roles, so production migrations must supply
+# MIGRATION_DATABASE_URL.
+_migration_url = os.getenv("MIGRATION_DATABASE_URL")
+config.set_main_option("sqlalchemy.url", _migration_url or settings.database_url or "")
 
 target_metadata = Base.metadata
 

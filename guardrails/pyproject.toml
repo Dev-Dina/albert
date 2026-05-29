@@ -10,6 +10,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc",
     "opentelemetry-instrumentation-fastapi",
     "uvicorn",
+    "nemoguardrails==0.22.0",
 ]
 
 [dependency-groups]

@@ -1,11 +1,22 @@
 """Role-based access enforcement.
 
-FastAPI dependencies and guard functions that enforce the three-role model.
-Key invariant: ``tenant_manager`` has lifecycle + aggregate power only.
-It MUST NOT gain read access to tenant conversations, leads, messages, or
-CMS content under any code path.
+Identity is resolved per request from the database, never from the token
+(fastapi-users JWTs carry only the user id):
 
-The guard functions in this module are the single chokepoint for that check.
+- ``users.platform_role == 'tenant_manager'`` → platform **tenant_manager**
+  (no tenant context; lifecycle + aggregate power only).
+- otherwise the user's ``tenant_memberships`` (always tenant-scoped):
+    * exactly one  → use it;
+    * more than one → require an explicit ``X-Tenant-Id`` header verified against
+      the user's memberships (never auto-pick);
+    * none          → 403.
+
+Key invariant: ``tenant_manager`` MUST NOT gain read access to tenant
+conversations, leads, messages, or CMS content under any code path —
+``assert_not_tenant_manager_content_read`` is the single chokepoint, and
+``tenant_scope`` refuses managers a tenant context.
+
+``users.is_superuser`` is fastapi-users-compat only and is NEVER consulted here.
 """
 
 from __future__ import annotations
@@ -13,31 +24,32 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Security, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.fastapi_users import current_active_user
 from app.auth.models import Role
-from app.auth.users import decode_access_token, get_role, get_tenant_id, get_user_id
+from app.db.models.membership import TenantMembership
+from app.db.models.user import User
+from app.db.session import get_db
 
-_bearer = HTTPBearer(auto_error=True)
-
-
-# ---------------------------------------------------------------------------
-# Internal: decode + validate token → CurrentUser
-# ---------------------------------------------------------------------------
 
 class CurrentUser:
     """Resolved, verified identity for the current request."""
 
     def __init__(
         self,
-        user_id: uuid.UUID | None,
+        *,
+        user_id: uuid.UUID,
         role: Role,
         tenant_id: uuid.UUID | None,
+        email: str,
     ) -> None:
         self.user_id = user_id
         self.role = role
         self.tenant_id = tenant_id
+        self.email = email
 
     @property
     def is_tenant_manager(self) -> bool:
@@ -52,38 +64,68 @@ class CurrentUser:
         return self.role == Role.member
 
 
-async def _current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Security(_bearer)],
+async def resolve_current_user(
+    user: User,
+    db: AsyncSession,
+    selected_tenant_id: uuid.UUID | None = None,
 ) -> CurrentUser:
-    """Decode the bearer token and return a verified CurrentUser.
+    """Resolve role + tenant from the DB. ``tenant_memberships`` is a platform
+    table (no RLS), so this runs without a tenant context."""
+    if user.platform_role == Role.tenant_manager.value:
+        return CurrentUser(
+            user_id=user.id, role=Role.tenant_manager, tenant_id=None, email=user.email
+        )
 
-    Raises HTTP 401 on invalid/expired token.
-    """
-    payload = decode_access_token(credentials.credentials)
-    if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token.",
-            headers={"WWW-Authenticate": "Bearer"},
+    rows = (
+        await db.execute(
+            select(TenantMembership).where(TenantMembership.user_id == user.id)
         )
-    role = get_role(payload)
-    if role is None:
+    ).scalars().all()
+
+    if not rows:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token carries no valid role.",
+            status_code=status.HTTP_403_FORBIDDEN, detail="No role assigned."
         )
+    if len(rows) == 1:
+        membership = rows[0]
+    else:
+        if selected_tenant_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Multiple tenant memberships; specify X-Tenant-Id.",
+            )
+        membership = next(
+            (r for r in rows if r.tenant_id == selected_tenant_id), None
+        )
+        if membership is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not a member of the requested tenant.",
+            )
+
+    try:
+        role = Role(membership.role)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid role."
+        ) from exc
+
     return CurrentUser(
-        user_id=get_user_id(payload),
-        role=role,
-        tenant_id=get_tenant_id(payload),
+        user_id=user.id, role=role, tenant_id=membership.tenant_id, email=user.email
     )
 
 
-# ---------------------------------------------------------------------------
-# Exported dependencies — use these in route signatures
-# ---------------------------------------------------------------------------
+async def get_current_user(
+    user: Annotated[User, Depends(current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_tenant_id: Annotated[uuid.UUID | None, Header()] = None,
+) -> CurrentUser:
+    """Verified principal for the request. 401 without a valid token; 403/400
+    per the resolution rule above."""
+    return await resolve_current_user(user, db, x_tenant_id)
 
-CurrentUserDep = Annotated[CurrentUser, Depends(_current_user)]
+
+CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
 
 
 async def require_tenant_manager(current: CurrentUserDep) -> CurrentUser:
@@ -123,12 +165,8 @@ async def require_tenant_admin_or_manager(current: CurrentUserDep) -> CurrentUse
 def assert_not_tenant_manager_content_read(current: CurrentUser, resource: str) -> None:
     """Raise if a tenant_manager is attempting to read tenant content.
 
-    Call this guard at the top of any handler that returns conversations,
-    messages, leads, or CMS content — to make the no-content-read rule
-    explicit and testable in one place.
-
-    ``resource`` is a human-readable label for error/audit messages, e.g.
-    "conversations", "leads", "cms_pages".
+    Call at the top of any handler returning conversations, messages, leads, or
+    CMS content. ``resource`` is a human-readable label for error/audit messages.
     """
     if current.is_tenant_manager:
         raise HTTPException(

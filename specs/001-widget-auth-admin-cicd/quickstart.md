@@ -6,12 +6,28 @@ engineer assistance.
 
 Prerequisite: the foundation stack from earlier phases is up:
 
+Recommended one-command path (migrations + manager + acme tenant admin + widget +
+origin + Vault key + a second tenant):
+
+```bash
+cp .env.example .env
+docker compose up -d
+docker compose --profile bootstrap up bootstrap
+```
+
+Or the minimal login-only seed (platform manager + acme tenant admin), after a
+build that bakes scripts into the image:
+
 ```bash
 cp .env.example .env
 docker compose up --build -d
-docker compose exec backend uv run alembic upgrade head
-docker compose exec backend uv run python scripts/seed_dev_user.py
+docker compose exec -T backend alembic upgrade head
+docker compose exec -T backend python scripts/seed_dev_user.py
 ```
+
+Either path makes the admin dashboard login work:
+`admin-acme@example.com` / `admin123` (tenant admin) — and
+`manager@example.com` / `admin123` (platform manager).
 
 ## 1. Seed a demo tenant and tenant admin (one-time, by an engineer)
 

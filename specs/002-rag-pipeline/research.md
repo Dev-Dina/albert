@@ -60,6 +60,10 @@
 
 ## Decision 6: Eval framework
 
-**Decision**: Custom `rag_eval.py` using hit@5 and MRR for retrieval; Groq LLM-as-judge for faithfulness and answer relevancy (same model already in stack)
+**Decision**: Custom `rag_eval.py` using hit@5 and MRR for retrieval; faithfulness and answer relevancy are scored by a **frozen offline judge rubric** (version-controlled, deterministic key-term coverage) so the CI gate does not require hosted API keys.
 
-**Rationale**: RAGAS is an option but adds a heavy dependency. Using the existing Groq client for judge calls keeps the eval stack lean and consistent. Hand-label the 15 golden triples against seeded demo content.
+**Rationale**: RAGAS or an LLM-as-judge can be used in deeper offline reviews, but the CI gate must be deterministic, free, and runnable on a fresh clone. The committed frozen judge scores key-term support between generated answers, ideal answers, and retrieved chunks. To keep it honest, a hand-labeled subset (`evals/rag_judge_labels.jsonl`, 5 of the 15 golden examples with human pass/fail verdicts) is checked against the judge's pass/fail decisions and the **agreement is reported** (and gated via `rag.judge_agreement_min`). This satisfies the brief's "frozen judge + report agreement with hand labels" option.
+
+**Two-sided calibration**: the hand-labeled subset includes both positive cases and negative calibration cases. Negative records carry an optional `candidate_answer` override (a deliberately unfaithful or irrelevant answer) that the judge re-scores in place of the golden generated answer — so agreement validates that the judge both agrees on good answers and *catches* bad ones, without altering the 15 golden generated answers.
+
+**Honest limitation**: the frozen judge is lexical, not semantic — a CI-safe grading floor, not a replacement for RAGAS / a semantic LLM judge. No hosted LLM judge runs in CI. The lexical rubric makes a "faithful-but-irrelevant" answer hard to construct (retrieved context tracks the question), so the negative set leans on relevant-but-unfaithful and clearly-irrelevant cases.

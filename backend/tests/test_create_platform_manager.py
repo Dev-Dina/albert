@@ -60,7 +60,7 @@ async def seed_actor():
 
 
 # ---------------------------------------------------------------------------
-# Success: new user + manager membership created
+# Success: new user gets platform_role=tenant_manager and NO tenant membership
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -72,14 +72,14 @@ async def test_create_manager_success(db: AsyncSession) -> None:
         password="secret123",
     )
     assert manager.email == "newmanager@test.local"
+    # Manager is platform-scoped via users.platform_role only.
+    assert manager.platform_role == Role.tenant_manager.value
 
+    # Memberships are strictly tenant-scoped — a manager has none.
     result = await db.execute(
         select(TenantMembership).where(TenantMembership.user_id == manager.id)
     )
-    membership = result.scalar_one_or_none()
-    assert membership is not None
-    assert membership.role == Role.tenant_manager.value
-    assert membership.tenant_id is None
+    assert result.scalar_one_or_none() is None
 
 
 # ---------------------------------------------------------------------------

@@ -116,5 +116,5 @@ The team can run an evaluation harness against a golden set of questions to meas
 - Cross-encoder reranking uses the Cohere Rerank API (hosted, no local model weights) to keep containers lean.
 - k=5 parent chunks is the default return value — chosen to balance context window usage against retrieval coverage; this number is justified with a hit@5 measurement.
 - The golden set of 15 triples is hand-labelled against seeded demo tenant content before Tuesday EOD.
-- Faithfulness and answer relevancy are measured using an LLM-as-judge approach (e.g. RAGAS or equivalent) — no human labelling required for generation metrics.
+- CI faithfulness and answer relevancy are measured with deterministic offline proxy metrics over the committed golden chunks and frozen generated answers. Hosted LLM judges or RAGAS may be used for deeper review, but are not required for CI.
 - Ingestion is idempotent by content ID — re-ingesting the same content replaces existing chunks rather than duplicating them.

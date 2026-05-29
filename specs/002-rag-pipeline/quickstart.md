@@ -34,8 +34,7 @@ asyncio.run(test())
 ## Run the eval harness
 
 ```bash
-cd backend
-uv run python -m evals.rag_eval --golden evals/rag_golden.jsonl
+uv run --project backend python -m evals.rag_eval --golden evals/rag_golden.jsonl
 ```
 
 ## Run tests
@@ -48,14 +47,14 @@ uv run pytest tests/test_ingestion.py tests/test_retrieval.py tests/test_chunk_i
 ## Environment variables needed
 
 ```
-OPENAI_API_KEY=<from Vault: secret/app/openai_api_key>
+GEMINI_API_KEY=<from Vault: secret/app/gemini_api_key>
 COHERE_API_KEY=<from Vault: secret/app/cohere_api_key>
 ```
 
 Seed Vault:
 ```bash
 docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=dev-root-token \
-  albert-vault-1 vault kv put secret/app/openai_api_key openai_api_key=sk-...
+  albert-vault-1 vault kv put secret/app/gemini_api_key gemini_api_key=...
 docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=dev-root-token \
   albert-vault-1 vault kv put secret/app/cohere_api_key cohere_api_key=...
 ```

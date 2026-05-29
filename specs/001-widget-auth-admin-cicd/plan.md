@@ -29,7 +29,7 @@ test, and surface observed-vs-threshold values on failure.
 **Language/Version**: Python 3.12 (backend, admin, eval scripts); TypeScript (widget bundle, compiled to a single ES module).
 
 **Primary Dependencies**:
-- Backend: FastAPI, SQLAlchemy 2.x (async), asyncpg, Alembic, python-jose (JWT), passlib[bcrypt], httpx, pydantic-settings, **new**: a `redis.asyncio` token-bucket built on top of Owner A's platform rate-limit primitive (Owner D adds the second dimension; does not fork a parallel system).
+- Backend: FastAPI, SQLAlchemy 2.x (async), asyncpg, Alembic, fastapi-users[sqlalchemy] (user-login JWT auth + pwdlib hashing), python-jose (widget-session tokens only), httpx, pydantic-settings, **new**: a `redis.asyncio` token-bucket built on top of Owner A's platform rate-limit primitive (Owner D adds the second dimension; does not fork a parallel system).
 - Admin: **new** `streamlit`, `httpx` (call backend), `pydantic`.
 - Widget bundle: **React 18** + TypeScript, compiled with `esbuild` (single ESM module). React was selected per Owner D's scope sheet. Bundle target: ≤ 110 KB minified (React + ReactDOM runtime + chat UI); loader stays ≤ 4 KB.
 - CI: GitHub Actions, `docker compose`, `uv`, `ruff`, `mypy` (or `pyright`), `pytest`, `vitest` (widget unit tests).

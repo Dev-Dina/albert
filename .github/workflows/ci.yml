@@ -17,7 +17,6 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -124,15 +123,16 @@ jobs:
       - name: Run smoke
         env:
           SMOKE_TIMEOUT_SECONDS: "120"
+          SMOKE_SEEDED_CHAT: "0"
         run: |
           cp .env.example .env
-          # Backend lifespan constructs genai.Client at startup which raises
-          # ValueError on an empty api_key. Smoke only hits /health so the
-          # key never has to be valid — but it must be non-empty. .env.example
-          # ships these empty. Rewriting in-place (instead of appending) avoids
-          # docker compose's version-dependent duplicate-key behaviour where
-          # an earlier empty value can shadow a later non-empty one.
-          # CI-only; do not propagate to prod.
+          # Provider keys are intentionally fake in CI. Smoke verifies compose
+          # startup, service health, guardrails, modelserver, widget origin/session
+          # gates, and invalid-token handling without real provider calls.
+          # Seeded chat is disabled here because demo seeding embeds RAG content
+          # and requires a real provider key. Full provider-backed widget/RAG chat
+          # remains a local/manual demo check.
+          # Rewrite in-place so an earlier empty value cannot shadow the fake one.
           sed -i 's|^GEMINI_API_KEY=$|GEMINI_API_KEY=ci-dummy-not-a-real-key|' .env
           sed -i 's|^GROQ_API_KEY=$|GROQ_API_KEY=ci-dummy-not-a-real-key|' .env
           # Show the relevant lines so a future failure is debuggable from
@@ -186,6 +186,8 @@ jobs:
       - run: pip install pyyaml
       - name: Prepare artifact dir
         run: mkdir -p artifacts
+      - name: Run 15-case tool-selection eval
+        run: python -m evals.tool_selection_eval --golden evals/tool_selection.jsonl
       - name: Run tool_selection gate
         run: python -m evals.tool_selection.run
       - name: Backstop — record runner crash if no result was written
@@ -202,6 +204,22 @@ jobs:
     name: Eval — RAG (FR-025)
     runs-on: ubuntu-latest
     needs: smoke
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: albert
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d albert"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -211,11 +229,19 @@ jobs:
       - name: Sync backend env (for retrieval pytest)
         working-directory: backend
         run: uv sync --locked
+      - name: Run Alembic migrations
+        working-directory: backend
+        run: uv run alembic upgrade head
+      - name: Run isolation evals
+        working-directory: backend
+        run: uv run python -m pytest ../evals/isolation -vv
       - name: Run retrieval/ingestion/isolation unit tests (Owner C handoff)
         working-directory: backend
         run: uv run pytest tests/test_ingestion.py tests/test_retrieval.py tests/test_chunk_isolation.py -v
       - name: Prepare artifact dir
         run: mkdir -p artifacts
+      - name: Run 15-case RAG eval harness
+        run: uv run --project backend python -m evals.rag_eval --golden evals/rag_golden.jsonl --labels evals/rag_judge_labels.jsonl
       # Run from repo root with plain python — evals/rag/run.py is pure stdlib
       # + pyyaml (via evals.common.thresholds). Running under
       # `uv run --directory backend` changed Python CWD to backend/ so the

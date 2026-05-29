@@ -8,15 +8,95 @@ Any business signs up, manages content in a CMS, and embeds an AI agent widget o
 
 Albert acts like a digital butler/concierge.
 
-## Phase 1 Goal
+## What's implemented
 
-Get a runnable foundation first. Features come later.
+Albert runs an end-to-end multi-tenant concierge stack. Pointers to each major area:
 
-This phase is only the repository foundation and folder skeleton. No app logic yet.
+- **Tenant isolation** — Postgres RLS on the `app.current_tenant` session variable
+  (FORCE RLS, `nullif(..., '')` fail-closed), repository-layer scoping, and a per-tenant
+  pgvector filter. The runtime backend connects as a dedicated **non-superuser** role
+  (`albert_app`) so RLS genuinely enforces. See [docs/DESIGN.md](docs/DESIGN.md) and
+  [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md).
+- **Widget auth** — signed, short-lived per-widget session tokens with a server-side
+  origin re-check (CORS is not the boundary). See
+  [specs/001-widget-auth-admin-cicd](specs/001-widget-auth-admin-cicd).
+- **Guardrails** — a **NeMo Guardrails sidecar + deterministic platform-deny prefilter**,
+  called over HTTP with a service credential. Deterministic platform denies run first;
+  NeMo handles configurable tenant topical rails; redaction is separate. Platform rails
+  cannot be weakened by tenant config.
+- **Classifier-driven router** — most turns take a cheap workflow path
+  (spam→drop, FAQ→RAG, lead→capture, escalate); the bounded agent handles only ambiguous
+  turns. Routed-off-agent/cost report: `python -m evals.router_cost`.
+- **Erasure** — total tenant deletion across Postgres, pgvector, MinIO, and Redis
+  (traces carry no raw tenant data; ADR-013 in [docs/DECISIONS.md](docs/DECISIONS.md)).
+- **Secrets** — runtime DB credentials and the service auth token are **Vault-backed when
+  configured**, with a local-dev env fallback. See [docs/SECRETS.md](docs/SECRETS.md).
+- **Evals + CI gates** — classifier, agent tool-selection, RAG (frozen lexical judge +
+  hand-labelled agreement), cross-tenant red-team, redaction, isolation, plus a seeded
+  Docker-compose smoke. Thresholds in [eval_thresholds.yaml](eval_thresholds.yaml);
+  pipeline in [.github/workflows/ci.yml](.github/workflows/ci.yml). Overview:
+  [docs/EVALS.md](docs/EVALS.md).
+
+Operations (bring-up, migrations, seeding, tenant lifecycle, troubleshooting):
+[docs/RUNBOOK.md](docs/RUNBOOK.md).
+
+## Submission summary
+
+```
+Week 8 - Concierge (Albert)
+Isolation: RLS (app.current_tenant, FORCE) + repo-layer + tenant-filtered pgvector
+           runtime role albert_app (non-superuser, NOBYPASSRLS)
+Roles: tenant_manager (platform) | tenant_admin | member - no content RLS bypass
+Tenants: seeded on demand via scripts/seed_demo_tenant.py
+Classifier task: intent routing (5 labels)  data: Bitext customer-support + UCI SMS Spam
+Classifier - ML F1=0.9718 | DL(ONNX) F1=0.9834 | LLM F1=0.5036
+           ships: Classical - fastest latency, lean serving (sklearn/joblib), SHA-pinned
+Model served: sklearn/joblib  artifact SHA-256 pinned in modelserver/MODEL_CARD.md
+Agent tools: rag_search | capture_lead | escalate   (bounded: max-iter + max-tokens)
+Routing: workflow 80% | agent 20%   (cost saved: estimate, labelled in evals/router_cost)
+RAG - chunking: hierarchical parent/child  improvement: Cohere rerank
+      hit@5=1.00  faithfulness=0.974  answer_relevancy=0.940
+Embedding model: text-embedding-004 (Gemini, hosted API)
+Guardrails sidecar: NeMo Guardrails + deterministic platform-deny prefilter
+                    platform denies (injection/jailbreak/cross-tenant/system-prompt/
+                    tenant-override/tool-abuse/secret) run FIRST; NeMo runs the
+                    configurable tenant topical rails (no LLM, no model download);
+                    redaction separate + CI-gated
+Widget auth: signed per-widget token + server-side origin check (CORS/CSP = depth)
+Service-to-service auth: service token from Vault (env fallback for dev)
+Redis short-term TTL: 1800s (30 min) - continuity vs anonymous-visitor privacy
+Tracing backend: Jaeger (OpenTelemetry)
+Widget bundle size: ~47 KB gzipped (148 KB raw); loader widget.js 977 B
+LLM: Gemini - agent gemini-2.5-flash-lite; embeddings text-embedding-004
+     (real GEMINI_API_KEY in Vault: secret/app/gemini_api_key; .env value is a dev placeholder)
+Docs: docs/DESIGN.md, SPEC.md (+ specs/), docs/DECISIONS.md, docs/RUNBOOK.md,
+      docs/EVALS.md, SECURITY.md
+```
 
 ## Local Setup (Docker Compose)
 
-Run the full local stack:
+Fresh-clone demo in three commands:
+
+```bash
+cp .env.example .env
+docker compose up -d
+docker compose --profile bootstrap up bootstrap   # migrate + seed demo data, then exits
+```
+
+The `bootstrap` step is idempotent (rerun-safe) and prints the demo URLs,
+credentials, and the seeded widget id. Demo logins (**dev-only**, documented):
+
+| Role | Email | Password |
+|---|---|---|
+| Platform manager (`tenant_manager`) | `manager@example.com` | `admin123` |
+| Tenant admin for `acme` (`tenant_admin`) | `admin-acme@example.com` | `admin123` |
+
+Admin UI: <http://localhost:8501> · Backend docs: <http://localhost:8000/docs> ·
+Jaeger: <http://localhost:16686>. See [docs/RUNBOOK.md](docs/RUNBOOK.md) for details.
+
+> Bootstrap is **dev/demo only** — weak passwords + dev-mode Vault. Never in production.
+
+To run without seeding (services only):
 
 ```bash
 cp .env.example .env
@@ -84,6 +164,12 @@ Alembic. Apply the latest migrations:
 cd backend
 uv run alembic upgrade head
 ```
+
+DB roles: the runtime backend connects as a dedicated **non-superuser** role
+(`albert_app`, created by migration `0001`) so RLS is enforced at runtime —
+`DATABASE_URL` points to it. Migrations need the admin/superuser login and run
+DDL + `CREATE ROLE`, so set `MIGRATION_DATABASE_URL` to the `postgres` URL;
+`alembic/env.py` prefers it and falls back to `DATABASE_URL` when unset.
 
 Inside Docker (recommended — resolves the `postgres` hostname on the compose network):
 

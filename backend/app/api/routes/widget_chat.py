@@ -13,43 +13,57 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.adapters.embedder import EmbedError
+from app.adapters.llm import LLMProviderError
 from app.api.deps import get_widget_session
-from app.core.config import settings
+from app.clients import inference_client
 from app.core.rate_limit import hash_identifier
 from app.core.security import WidgetSessionClaims
 from app.db.tenant_session import get_tenant_db
 from app.schemas.widget_chat import WidgetChatRequest, WidgetChatResponse
 from app.services import memory as memory_service
 from app.services import router as router_service
+from app.services import workflow
 from app.services.agent import run_agent
+from app.services.conversation import ensure_conversation
+from app.services.tenant_runtime import load_runtime_config
 
 router = APIRouter(prefix="/api/v1/widget", tags=["widget"])
 logger = logging.getLogger(__name__)
 
-_GUARDRAILS_TIMEOUT = 5.0
+# Correct guardrails routes (/check-input, /check-output) come from
+# inference_client — one source of truth for the route names, service-auth
+# header, and X-Request-ID propagation (prevents the /input//output 404 regress).
+_GUARDRAILS_CALLS = {
+    "input": inference_client.call_guardrails_check_input,
+    "output": inference_client.call_guardrails_check_output,
+}
 
 
-async def _guardrails_check(endpoint: str, text: str) -> bool:
-    """POST to guardrails sidecar. Fails closed on any error or block."""
+async def _guardrails_check(
+    endpoint: str, text: str, tenant_rails: dict | None = None
+) -> bool:
+    """Call the guardrails sidecar via the shared service client.
+
+    Forwards the tenant's rails so tenant-configured blocks are enforced; the
+    sidecar always evaluates platform rules first, so tenant rails can only add
+    restrictions, never weaken the platform floor. Fails closed: any transport
+    error, non-200, or block verdict → False.
+    """
+    payload: dict = {"text": text}
+    if tenant_rails:
+        payload["context"] = {"source": endpoint, "tenant_rails": tenant_rails}
     try:
-        async with httpx.AsyncClient(timeout=_GUARDRAILS_TIMEOUT) as client:
-            resp = await client.post(
-                f"{settings.guardrails_url}/{endpoint}",
-                json={"text": text},
-                headers={
-                    "Authorization": f"Bearer {settings.service_auth_token.get_secret_value()}"
-                },
-            )
-        if resp.status_code != 200:
-            logger.warning("widget.guardrails.%s non-200 status=%d — blocking", endpoint, resp.status_code)
-            return False
-        return bool(resp.json().get("allowed", False))
+        resp = await _GUARDRAILS_CALLS[endpoint](payload)
     except Exception as exc:
         logger.warning("widget.guardrails.%s failed error=%s — blocking (fail closed)", endpoint, exc)
         return False
+    if resp.status_code != 200:
+        logger.warning("widget.guardrails.%s non-200 status=%d — blocking", endpoint, resp.status_code)
+        return False
+    return bool(resp.json().get("allowed", False))
 
 
 async def _peek_for_foreign_tenant_id(request: Request) -> str | None:
@@ -99,7 +113,13 @@ async def post_widget_chat(
         },
     )
 
-    if not await _guardrails_check("input", payload.message):
+    tenant_db_ctx = asynccontextmanager(get_tenant_db)
+
+    # Load tenant runtime config (persona/business_name + tenant rails) under RLS.
+    async with tenant_db_ctx(tenant_id) as cfg_db:
+        runtime = await load_runtime_config(cfg_db, claims.tenant_id, claims.widget_id)
+
+    if not await _guardrails_check("input", payload.message, runtime.tenant_rails):
         raise HTTPException(status_code=400, detail="Message blocked by guardrails")
 
     redis = request.app.state.redis
@@ -107,34 +127,83 @@ async def post_widget_chat(
 
     decision = await router_service.classify_and_route(payload.message, tenant_id)
 
-    # spam label → drop immediately
-    if decision.action == "direct" and decision.reply is None:
+    # Cheap workflow paths handle enumerable easy cases without the agent;
+    # reply=None means fall back to the bounded agent. The RAG path embeds the
+    # query, so a provider embedding failure becomes a controlled 503, not a 500.
+    try:
+        wf = await workflow.dispatch(
+            decision,
+            message=payload.message,
+            tenant_id=tenant_id,
+            conversation_id=str(conversation_id),
+            db_ctx=tenant_db_ctx,
+            redis=redis,
+            embedder=request.app.state.embedder,
+            reranker=request.app.state.reranker,
+        )
+    except EmbedError:
+        logger.warning("widget_chat.embed_unavailable conversation_id=%s", str(conversation_id))
+        raise HTTPException(
+            status_code=503, detail="Knowledge retrieval is temporarily unavailable"
+        ) from None
+
+    if wf.dropped:
         raise HTTPException(status_code=400, detail="Message blocked")
 
-    if decision.action == "direct" and decision.reply:
-        reply = decision.reply
+    agent_called = False
+    if wf.reply is not None:
+        reply = wf.reply
+        handled_by = wf.handled_by
     else:
-        tenant_db_ctx = asynccontextmanager(get_tenant_db)
-        async with tenant_db_ctx(tenant_id) as db:
-            result = await run_agent(
-                tenant_id=tenant_id,
-                conversation_id=str(conversation_id),
-                user_message=payload.message,
-                llm=request.app.state.llm,
-                db=db,
-                redis=redis,
-                embedder=request.app.state.embedder,
-                reranker=request.app.state.reranker,
-                history=history,
-            )
+        agent_called = True
+        handled_by = "agent"
+        try:
+            async with tenant_db_ctx(tenant_id) as db:
+                # Ensure the conversations row exists (same TX) so the agent's
+                # cost-event insert satisfies the cost_events.conversation_id FK.
+                await ensure_conversation(db, claims.tenant_id, conversation_id)
+                result = await run_agent(
+                    tenant_id=tenant_id,
+                    conversation_id=str(conversation_id),
+                    user_message=payload.message,
+                    llm=request.app.state.llm,
+                    db=db,
+                    redis=redis,
+                    embedder=request.app.state.embedder,
+                    reranker=request.app.state.reranker,
+                    persona=runtime.persona,
+                    business_name=runtime.business_name,
+                    history=history,
+                )
+                # Persist the conversation + cost events for this turn.
+                await db.commit()
+        except LLMProviderError:
+            # Controlled 503 instead of a raw 500 / provider stack trace.
+            logger.warning("widget_chat.llm_unavailable conversation_id=%s", str(conversation_id))
+            raise HTTPException(
+                status_code=503, detail="AI service temporarily unavailable"
+            ) from None
+        except EmbedError:
+            logger.warning("widget_chat.embed_unavailable conversation_id=%s", str(conversation_id))
+            raise HTTPException(
+                status_code=503, detail="Knowledge retrieval is temporarily unavailable"
+            ) from None
         reply = result.reply
 
-    if not await _guardrails_check("output", reply):
+    if not await _guardrails_check("output", reply, runtime.tenant_rails):
         raise HTTPException(status_code=400, detail="Response blocked by guardrails")
 
     await memory_service.save_turn(redis, tenant_id, str(conversation_id), payload.message, reply)
 
-    logger.info("widget_chat.done tenant=%s conv=%s", tenant_id, conversation_id)
+    logger.info(
+        "widget_chat.done",
+        extra={
+            "event": "widget_chat_done",
+            "route_label": decision.label,
+            "handled_by": handled_by,
+            "agent_called": agent_called,
+        },
+    )
     return WidgetChatResponse(
         conversation_id=conversation_id,
         message=reply,

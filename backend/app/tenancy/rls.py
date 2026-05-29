@@ -23,7 +23,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # The Postgres session variable that every RLS policy reads.
-_RLS_VAR = "app.current_tenant"
+TENANT_CONTEXT_GUC = "app.current_tenant"
+_RLS_VAR = TENANT_CONTEXT_GUC
 
 
 async def set_tenant_context(db: AsyncSession, tenant_id: uuid.UUID) -> None:

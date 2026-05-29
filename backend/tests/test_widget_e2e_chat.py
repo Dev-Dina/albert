@@ -7,8 +7,7 @@ guardrails sidecar by overriding app dependencies and patching external calls.
 from __future__ import annotations
 
 import uuid
-from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -16,8 +15,20 @@ from app.core.security import mint_widget_session_token
 from app.main import app
 from app.schemas.router import RouterDecision
 from app.services.agent import AgentResult
+from app.services.tenant_runtime import TenantRuntimeConfig
 
 client = TestClient(app)
+
+_DEFAULT_RUNTIME = TenantRuntimeConfig(
+    business_name="the business", persona="Albert", tenant_rails=None
+)
+
+
+def _runtime_patch():
+    return patch(
+        "app.api.routes.widget_chat.load_runtime_config",
+        new=AsyncMock(return_value=_DEFAULT_RUNTIME),
+    )
 
 _TENANT_A = uuid.uuid4()
 _WIDGET_A = uuid.uuid4()
@@ -31,13 +42,21 @@ _FAQ_DECISION = RouterDecision(
     action="agent", label="faq_rag", confidence=0.95, routed_to="agent"
 )
 _SPAM_DECISION = RouterDecision(
-    action="direct", label="spam", confidence=0.99, routed_to="router", reply=None
+    action="direct", label="spam", confidence=0.99, routed_to="router", reply=None, handler="drop"
 )
 _MOCK_AGENT_RESULT = AgentResult(reply=_MOCK_REPLY, escalated=False, iterations_used=1)
 
 
+class _FakeAgentDb:
+    async def execute(self, *args, **kwargs):
+        return None
+
+    async def commit(self):
+        return None
+
+
 async def _null_db_gen(*args, **kwargs):
-    yield None
+    yield _FakeAgentDb()
 
 
 def _wire_dependencies() -> str:
@@ -85,6 +104,7 @@ def test_chat_round_trip_returns_assistant_message() -> None:
     token = _wire_dependencies()
 
     with (
+        _runtime_patch(),
         patch(
             "app.api.routes.widget_chat._guardrails_check",
             new=AsyncMock(return_value=True),
@@ -115,6 +135,7 @@ def test_chat_round_trip_returns_assistant_message() -> None:
 
     # Second turn with same conversation_id must be preserved.
     with (
+        _runtime_patch(),
         patch(
             "app.api.routes.widget_chat._guardrails_check",
             new=AsyncMock(return_value=True),
@@ -145,9 +166,13 @@ def test_chat_round_trip_returns_assistant_message() -> None:
 def test_guardrails_input_block_returns_400() -> None:
     token = _wire_dependencies()
 
-    with patch(
-        "app.api.routes.widget_chat._guardrails_check",
-        new=AsyncMock(return_value=False),
+    with (
+        _runtime_patch(),
+        patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen),
+        patch(
+            "app.api.routes.widget_chat._guardrails_check",
+            new=AsyncMock(return_value=False),
+        ),
     ):
         response = client.post(
             "/api/v1/widget/chat",
@@ -162,6 +187,8 @@ def test_spam_label_returns_400() -> None:
     token = _wire_dependencies()
 
     with (
+        _runtime_patch(),
+        patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen),
         patch(
             "app.api.routes.widget_chat._guardrails_check",
             new=AsyncMock(return_value=True),

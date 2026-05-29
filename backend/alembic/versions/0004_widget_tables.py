@@ -31,6 +31,7 @@ _TENANT_TABLES = (
     "widget_guardrail_configs",
     "widget_signing_key_versions",
 )
+_POLICY_EXPR = "tenant_id = nullif(current_setting('app.current_tenant', true), '')::uuid"
 
 
 def upgrade() -> None:
@@ -181,15 +182,15 @@ def upgrade() -> None:
         postgresql_where=sa.text("is_active"),
     )
 
-    # Row-Level Security: every tenant table is gated on app.tenant_id.
+    # Row-Level Security: every tenant table is gated on app.current_tenant.
     for table in _TENANT_TABLES:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY;")
         op.execute(
             f"""
             CREATE POLICY {table}_tenant_isolation ON {table}
-              USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-              WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+              USING ({_POLICY_EXPR})
+              WITH CHECK ({_POLICY_EXPR});
             """
         )
 
@@ -212,6 +213,14 @@ def upgrade() -> None:
     )
     op.execute(
         "REVOKE ALL ON FUNCTION lookup_widget_by_public_id(text) FROM PUBLIC;"
+    )
+    # The runtime app role (albert_app: non-superuser, NOBYPASSRLS) invokes this
+    # during widget token exchange, BEFORE any tenant context exists. PUBLIC
+    # execute was revoked above; grant EXECUTE explicitly — least privilege, only
+    # this SECURITY DEFINER lookup. Without it /api/v1/widget/session 500s under
+    # the runtime role. The DROP FUNCTION in downgrade removes this grant.
+    op.execute(
+        "GRANT EXECUTE ON FUNCTION lookup_widget_by_public_id(text) TO albert_app;"
     )
 
 

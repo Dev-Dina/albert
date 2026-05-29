@@ -71,4 +71,5 @@ cd backend
 PYTHONPATH=.. uv run python -m evals.tool_selection_eval --golden ../evals/tool_selection.jsonl
 ```
 
-**Expected**: Accuracy ≥ 80%, exit code 0. If accuracy drops below threshold, exit code 1.
+**Expected**: Accuracy meets `agent_tool_selection.accuracy_min` in the root
+`eval_thresholds.yaml`, exit code 0. If accuracy drops below threshold, exit code 1.

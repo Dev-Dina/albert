@@ -3,26 +3,34 @@ import logging
 import httpx
 
 from app.core.config import settings
-from app.schemas.router import RouterDecision
+from app.schemas.router import Handler, RouterDecision
 
 logger = logging.getLogger(__name__)
 
-# Canonical labels from the model server (Owner C).
-# spam → drop immediately; faq_rag → RAG; lead_capture / human_escalate / other_agent → agent.
-_SPAM_LABELS = {"spam"}
-_AGENT_LABELS = {"faq_rag", "lead_capture", "human_escalate", "other_agent"}
+# Canonical labels from the model server (Owner C) → cheap-path handler.
+# Enumerable easy cases are handled by the workflow; only genuinely
+# ambiguous/open-ended turns (other_agent, low confidence) go to the agent.
+_LABEL_HANDLER: dict[str, Handler] = {
+    "spam": "drop",
+    "faq_rag": "rag",
+    "lead_capture": "lead",
+    "human_escalate": "escalate",
+    "other_agent": "agent",
+}
+
+
+def handler_for_label(label: str) -> Handler:
+    """Pure label→handler mapping (also used by the routing cost report)."""
+    return _LABEL_HANDLER.get(label, "agent")
 
 
 async def classify_and_route(message: str, tenant_id: str) -> RouterDecision:
-    """Classify message via model-server and return a routing decision.
+    """Classify the message via model-server and return a routing decision.
 
-    Falls back to action='agent' on any HTTP error or low confidence.
+    Falls back to the agent on any HTTP error, low confidence, or ambiguous label.
     """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # TODO(Ali): /classify expects {"text": message}, not {"message": ...}
-            # (422 → silent agent fallback every call). Use Owner C labels:
-            # faq_rag, lead_capture, human_escalate, spam, other_agent.
             resp = await client.post(
                 f"{settings.modelserver_url}/classify",
                 json={"text": message},
@@ -36,20 +44,22 @@ async def classify_and_route(message: str, tenant_id: str) -> RouterDecision:
             confidence: float = float(data.get("confidence", 0.0))
     except Exception as exc:
         logger.warning("router.classify_failed tenant=%s error=%s — falling back to agent", tenant_id, exc)
-        return RouterDecision(action="agent", label="unknown", confidence=0.0, routed_to="agent")
+        return RouterDecision(action="agent", label="unknown", confidence=0.0, routed_to="agent", handler="agent")
 
     if confidence < settings.router_confidence_threshold or label == "ambiguous":
         logger.info("router.low_confidence tenant=%s label=%s conf=%.2f — agent", tenant_id, label, confidence)
-        return RouterDecision(action="agent", label=label, confidence=confidence, routed_to="agent")
+        return RouterDecision(action="agent", label=label, confidence=confidence, routed_to="agent", handler="agent")
 
-    if label in _SPAM_LABELS:
+    handler = handler_for_label(label)
+
+    if handler == "drop":
         logger.info("router.spam_drop tenant=%s label=%s", tenant_id, label)
-        return RouterDecision(action="direct", label=label, confidence=confidence, routed_to="router", reply=None)
+        return RouterDecision(action="direct", label=label, confidence=confidence, routed_to="router", reply=None, handler="drop")
 
-    if label in _AGENT_LABELS:
+    if handler == "agent":
         logger.info("router.agent_handoff tenant=%s label=%s", tenant_id, label)
-        return RouterDecision(action="agent", label=label, confidence=confidence, routed_to="agent")
+        return RouterDecision(action="agent", label=label, confidence=confidence, routed_to="agent", handler="agent")
 
-    # Unknown label — safe fallback to agent.
-    logger.info("router.unknown_label tenant=%s label=%s — agent", tenant_id, label)
-    return RouterDecision(action="agent", label=label, confidence=confidence, routed_to="agent")
+    # Cheap workflow paths: rag / lead / escalate — no agent call.
+    logger.info("router.workflow tenant=%s label=%s handler=%s", tenant_id, label, handler)
+    return RouterDecision(action="direct", label=label, confidence=confidence, routed_to="workflow", handler=handler)

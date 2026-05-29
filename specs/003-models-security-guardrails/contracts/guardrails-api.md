@@ -73,5 +73,8 @@ Response semantics:
 - A platform **DENY** always overrides a tenant **ALLOW**; tenant rails may only **narrow** behavior — enforced via `guardrail_floor.enforce_floor()`.
 
 ## Constraints
-- Serving image: FastAPI + uvicorn only — **no torch/transformers** (NeMo/Guardrails.ai not adopted; rules-first per decision O-5).
+- Serving image: FastAPI + uvicorn + **NeMo Guardrails** (tenant topical rails) behind a
+  deterministic platform-deny prefilter — still **no torch/transformers**. NeMo runs with
+  no LLM and no embeddings (custom-action topic policy). See ADR-010. NeMo is isolated to
+  this sidecar; backend/modelserver stay lean.
 - Fail closed on auth; redaction fails closed (redact rather than pass).

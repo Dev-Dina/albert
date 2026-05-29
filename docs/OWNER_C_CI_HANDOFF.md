@@ -31,7 +31,8 @@ uv run --project modelserver python -m evals.classifier.run
 Expected final line:
 
 ```text
-GATE=classifier STATUS=pass OBSERVED=<macro-f1> THRESHOLD=0.600000
+GATE=classifier STATUS=pass OBSERVED=<macro-f1> 0.95
+THRESHOLD=0.950000
 ```
 
 Current observed macro-F1: `0.971762`.
@@ -158,5 +159,6 @@ uv run --project guardrails python -m ruff check evals/redteam_cross_tenant/run.
 - Tracing backend: OpenTelemetry + Jaeger.
 - Service-to-service auth: `Authorization: Bearer <service credential>` with
   local `SERVICE_AUTH_TOKEN` fallback and Vault/env injection later.
-- Guardrails sidecar: deterministic rules-first platform rails; tenant rails
-  may narrow behavior but cannot weaken platform rails.
+- Guardrails sidecar: NeMo Guardrails + deterministic platform-deny prefilter.
+  Deterministic platform denies run first; NeMo runs the tenant topical rails;
+  tenant rails may narrow behavior but cannot weaken platform rails (see ADR-010).

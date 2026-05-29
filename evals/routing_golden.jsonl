@@ -1,0 +1,15 @@
+{"message":"What are your opening hours?","label":"faq_rag"}
+{"message":"What is your return policy?","label":"faq_rag"}
+{"message":"How long does shipping take?","label":"faq_rag"}
+{"message":"How much does the basic plan cost?","label":"faq_rag"}
+{"message":"Where is your office located?","label":"faq_rag"}
+{"message":"Do you offer a free trial?","label":"faq_rag"}
+{"message":"Please have a sales rep email me at buyer@example.com","label":"lead_capture"}
+{"message":"I'd like a callback about pricing, my number is +1 415 555 2671","label":"lead_capture"}
+{"message":"I need to speak to a human","label":"human_escalate"}
+{"message":"This is unacceptable, get me a manager now","label":"human_escalate"}
+{"message":"BUY CHEAP MEDS NOW http://spam.example","label":"spam"}
+{"message":"Earn $$$ working from home, click here","label":"spam"}
+{"message":"Compare your plan to a competitor and recommend one for my use case","label":"other_agent"}
+{"message":"Help me plan a multi-step migration from our current vendor","label":"other_agent"}
+{"message":"Tell me about yourself and then book me a demo next week","label":"other_agent"}

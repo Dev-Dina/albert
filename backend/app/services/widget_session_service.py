@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients import vault_client
 from app.core.config import settings
 from app.core.security import WidgetTokenError, mint_widget_session_token
+from app.core.tenant_context import tenant_context
 from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion
 from app.repositories import allowed_origin_repo, widget_repo
 from app.schemas.widget import WidgetPublicView
@@ -80,19 +81,30 @@ async def exchange(
     if not _origin_well_formed(origin):
         raise WidgetSessionError("malformed origin")
 
+    # Resolve tenant identity via the SECURITY DEFINER lookup, which runs with no
+    # tenant context (the public endpoint has none yet).
     lookup = await widget_repo.get_by_public_id(session, public_widget_id)
     if lookup is None or lookup.status != "enabled":
         raise WidgetSessionError("widget not available")
 
-    allowed = await allowed_origin_repo.exists_for_tenant(
-        session, lookup.tenant_id, origin
-    )
-    if not allowed:
-        raise WidgetSessionError("origin not allowed")
+    # The remaining reads hit tenant-scoped tables (widget_allowed_origins,
+    # widget_signing_key_versions, widgets) under FORCE ROW LEVEL SECURITY. The
+    # runtime role is non-superuser / NOBYPASSRLS, so without app.current_tenant
+    # set RLS filters every row and exchange would wrongly 403. Set the context
+    # to the tenant just resolved from the trusted lookup (never from the caller).
+    async with tenant_context(session, lookup.tenant_id):
+        allowed = await allowed_origin_repo.exists_for_tenant(
+            session, lookup.tenant_id, origin
+        )
+        if not allowed:
+            raise WidgetSessionError("origin not allowed")
 
-    active_key = await _fetch_active_key_version(session, lookup.tenant_id)
-    if active_key is None:
-        raise WidgetSessionError("no signing key")
+        active_key = await _fetch_active_key_version(session, lookup.tenant_id)
+        if active_key is None:
+            raise WidgetSessionError("no signing key")
+
+        # Hydrate the public widget view (theme/greeting) while under context.
+        widget = await widget_repo.get_by_id(session, lookup.widget_id)
 
     key_material = await vault_client.read_tenant_widget_signing_key(lookup.tenant_id)
     if key_material is None:
@@ -110,17 +122,10 @@ async def exchange(
     except WidgetTokenError as exc:
         raise WidgetSessionError("token minting failed") from exc
 
-    # Best-effort: hydrate the public widget view (theme/greeting) from the
-    # widget row if the lookup helper gave us only the minimum fields.
-    widget = await widget_repo.get_by_id(session, lookup.widget_id)
-    public_view = (
-        WidgetPublicView(
-            public_widget_id=public_widget_id,
-            theme=widget.theme if widget is not None else {},
-            greeting=widget.greeting if widget is not None else "",
-        )
-        if True
-        else None
+    public_view = WidgetPublicView(
+        public_widget_id=public_widget_id,
+        theme=widget.theme if widget is not None else {},
+        greeting=widget.greeting if widget is not None else "",
     )
 
     return WidgetSessionResponse(

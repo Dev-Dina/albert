@@ -3,7 +3,7 @@
 Usage:
     python -m evals.tool_selection_eval --golden evals/tool_selection.jsonl
 
-Exits non-zero if accuracy < eval_thresholds.yaml[tool_selection_accuracy].
+Exits non-zero if accuracy < eval_thresholds.yaml[agent_tool_selection.accuracy_min].
 """
 
 from __future__ import annotations

@@ -72,8 +72,16 @@ def teardown_function() -> None:
     app.dependency_overrides.clear()
 
 
+class _FakeAgentDb:
+    async def execute(self, *args, **kwargs):
+        return None
+
+    async def commit(self):
+        return None
+
+
 async def _null_db_gen(*args, **kwargs):
-    yield None
+    yield _FakeAgentDb()
 
 
 _MOCK_AGENT_RESULT = AgentResult(reply="ok", escalated=False, iterations_used=1)
