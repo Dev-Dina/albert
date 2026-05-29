@@ -11,7 +11,6 @@ import uuid
 
 import pytest
 from fastapi import HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
 
 from app.auth.fastapi_users import current_active_user, get_user_manager

@@ -1,9 +1,12 @@
-"""Albert tenant-admin entry page.
+"""Albert admin entry point — role-aware navigation.
 
-Streamlit auto-discovers the per-feature pages under ``pages/``; this file
-hosts the landing / overview surface and the sign-in form. The shared
-chrome (theme + sidebar account block) lives in ``app.lib`` so every page
-can import it.
+After sign-in the app probes the verified identity from the backend
+(``GET /auth/me``) — never from a UI toggle, a query param, or by decoding the
+JWT locally — then registers ONLY the resolved role's pages via
+``st.navigation``. Cross-role / unknown identities get the static wrong-role
+view. Pages live under ``pages_platform/`` and ``pages_tenant/`` (not
+Streamlit's auto-discovered ``pages/``) so the wrong role's surface is never
+enumerable in the sidebar (FR-001, FR-002, FR-003).
 """
 
 from __future__ import annotations
@@ -12,75 +15,73 @@ import streamlit as st
 
 from app.clients.backend_client import BackendClient, BackendError
 from app.lib.auth import (
+    Session,
+    current_session,
+    login_form,
     render_sidebar_account,
-    require_session,
+    render_wrong_role_view,
+    resolve_identity,
 )
-from app.lib.theme import (
-    apply_page_chrome,
-    callout,
-    section,
-)
+from app.lib.nav import build_navigation
+from app.lib.theme import apply_page_chrome
+from app.lib.ui import error_state
 
 
 def _get_client(token: str | None = None) -> BackendClient:
     return BackendClient(token=token)
 
 
-def _overview(session) -> None:
-    client = _get_client(token=session.token)
-
-    st.markdown(
-        '<h1>Tenant admin overview</h1>'
-        '<p class="albert-meta">Manage your widgets, allowed origins, '
-        "guardrails, and signing keys. Open a section from the left sidebar.</p>",
-        unsafe_allow_html=True,
-    )
-
-    # Lightweight status snapshot — the bento grid lives here. Each card is
-    # a single section with one primary metric and one secondary line.
-    try:
-        widgets = client.list_widgets()
-        origins = client.list_allowed_origins()
-    except BackendError as exc:
-        callout(f"Could not load overview: {exc}", level="danger")
+def _render_role_badge(session: Session) -> None:
+    """Sidebar badge: 'Platform' for managers, 'Tenant: <name>' for admins."""
+    if session.role == "tenant_manager":
+        label, css_class = "Platform", "albert-badge-muted"
+    elif session.role == "tenant_admin":
+        label = f"Tenant: {session.tenant_name or '—'}"
+        css_class = "albert-badge-success"
+    else:
         return
-
-    enabled = sum(1 for w in widgets if w.status == "enabled")
-    disabled = len(widgets) - enabled
-
-    col_w, col_o, col_g = st.columns(3, gap="medium")
-    with col_w:
-        section("Widgets")
+    with st.sidebar:
         st.markdown(
-            f'<div class="albert-mono" style="font-size:2rem;">{len(widgets)}</div>'
-            f'<div class="albert-meta">{enabled} enabled · {disabled} disabled</div>',
+            f'<div style="margin-bottom:0.5rem;">'
+            f'<span class="albert-badge {css_class}">{label}</span></div>',
             unsafe_allow_html=True,
         )
-    with col_o:
-        section("Allowed origins")
-        st.markdown(
-            f'<div class="albert-mono" style="font-size:2rem;">{len(origins)}</div>'
-            f'<div class="albert-meta">Sites your widget will load from</div>',
-            unsafe_allow_html=True,
-        )
-        if not origins:
-            callout(
-                "No allowed origins configured — your widget cannot load anywhere.",
-                level="warning",
-            )
-    with col_g:
-        section("Quick actions")
-        st.page_link("pages/1_Widgets.py", label="Manage widgets", icon="🪟")
-        st.page_link("pages/2_Allowed_Origins.py", label="Edit allowlist", icon="🛡️")
-        st.page_link("pages/4_Embed_Snippet.py", label="Copy embed snippet", icon="📋")
 
 
 def main() -> None:
-    apply_page_chrome("Overview", icon="🟦")
-    client = _get_client()
-    session = require_session(client)
+    apply_page_chrome("Admin")
+
+    base = current_session()
+    if base is None:
+        login_form(_get_client())
+        return
+
+    client = _get_client(token=base.token)
+    try:
+        session = resolve_identity(client)
+    except BackendError as exc:
+        # 5xx / network during the identity probe — retryable error state.
+        if error_state(
+            f"Couldn't load your account from the backend: {exc}",
+            key="albert-identity-retry",
+        ):
+            st.rerun()
+        return
+
+    if session is None:
+        # Token was rejected (401) and the session cleared — show login again.
+        login_form(_get_client())
+        return
+
     render_sidebar_account(session)
-    _overview(session)
+    _render_role_badge(session)
+
+    if session.role == "other":
+        render_wrong_role_view(session)
+        return
+
+    navigation = st.navigation(build_navigation(session.role))
+    navigation.run()
 
 
 if __name__ == "__main__":

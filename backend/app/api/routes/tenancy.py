@@ -17,10 +17,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.roles import TenantManagerDep
-from app.cost import aggregate_cost_all_tenants, aggregate_cost_for_tenant
+from app.cost import (
+    aggregate_cost_all_tenants,
+    aggregate_cost_for_tenant,
+    aggregate_cost_series_all_tenants,
+)
 from app.db.models.tenant import Tenant
 from app.db.session import get_db
-from app.tenancy.audit import get_audit_log
+from app.schemas.tenancy_audit import AuditEntryResponse
+from app.schemas.tenancy_cost import CostSeriesResponse
+from app.tenancy.audit import get_audit_log, list_all_cross_tenant
 from app.tenancy.erasure import erase_tenant
 from app.tenancy.provisioning import (
     AdminNotFoundError,
@@ -130,6 +136,60 @@ async def list_tenants(
         )
         for t in tenants
     ]
+
+
+# NOTE: the literal ``/audit`` and ``/cost/series`` routes are declared BEFORE
+# the parametrized ``/{tenant_id}`` route so a request to ``/tenants/audit`` is
+# not captured by ``/{tenant_id}`` (which would 422 on an invalid UUID).
+
+
+@router.get("/audit", response_model=list[AuditEntryResponse])
+async def list_cross_tenant_audit(
+    current: TenantManagerDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=200),
+    before_id: uuid.UUID | None = Query(default=None),
+) -> list[AuditEntryResponse]:
+    """Cross-tenant audit timeline (manager-only; FR-050 exception 3).
+
+    Returns the newest audit rows across ALL tenants in one call, for the
+    single Audit Log timeline (FR-016). NEVER returns tenant conversation,
+    message, lead, or CMS content — only the fields on ``AuditEntryResponse``
+    (asserted by the content-exclusion test).
+    """
+    rows = await list_all_cross_tenant(db=db, limit=limit, before_id=before_id)
+    return [
+        AuditEntryResponse(
+            entry_id=entry.id,
+            actor_user_id=entry.actor_user_id,
+            actor_email=actor_email,
+            action=entry.action,
+            target_tenant_id=entry.target_tenant_id,
+            target_tenant_slug=target_slug,
+            created_at=entry.created_at,
+            meta=entry.meta,
+        )
+        for (entry, actor_email, target_slug) in rows
+    ]
+
+
+@router.get("/cost/series", response_model=list[CostSeriesResponse])
+async def get_all_tenants_cost_series(
+    current: TenantManagerDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    since: datetime | None = None,
+    until: datetime | None = None,
+    granularity: str = Query(default="daily"),
+) -> list[CostSeriesResponse]:
+    """Per-tenant daily cost series in ONE batched call (FR-050 exception 4).
+
+    Backs the Cost Overview sparkline (FR-015) without a per-row fan-out.
+    Numeric daily buckets only — no tenant content. Manager-only.
+    """
+    series = await aggregate_cost_series_all_tenants(
+        db=db, since=since, until=until, granularity=granularity
+    )
+    return [CostSeriesResponse(**item) for item in series]
 
 
 @router.get("/{tenant_id}", response_model=TenantDetailResponse)

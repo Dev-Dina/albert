@@ -1,4 +1,10 @@
-"""Widgets page — list, create, edit name/theme/greeting/status."""
+"""Widgets page — list, create, edit name/theme/greeting/status.
+
+Migrated from ``pages/1_Widgets.py`` to the ``st.navigation`` model: identity +
+chrome + sidebar are handled by ``main.py``, so this page only builds an authed
+client from ``page_session()`` and swaps the empty/error rendering for the
+shared ``lib/ui`` primitives. All prior actions are preserved (SC-010).
+"""
 
 from __future__ import annotations
 
@@ -6,14 +12,10 @@ import json
 
 import streamlit as st
 
-from app.clients.backend_client import (
-    AdminWidget,
-    BackendClient,
-    BackendError,
-    BackendUnauthorizedError,
-)
-from app.lib.auth import clear_session, render_sidebar_account, require_session
-from app.lib.theme import apply_page_chrome, callout, section, status_badge
+from app.clients.backend_client import AdminWidget, BackendClient, BackendError
+from app.lib import ui
+from app.lib.auth import handle_backend_error, page_session
+from app.lib.theme import callout, section, status_badge
 
 
 def _render_widget_row(client: BackendClient, widget: AdminWidget, *, allowlist_empty: bool) -> None:
@@ -71,10 +73,9 @@ def _render_widget_row(client: BackendClient, widget: AdminWidget, *, allowlist_
                         theme=parsed_theme,
                         status=new_status,
                     )
-                except BackendUnauthorizedError:
-                    clear_session()
-                    st.rerun()
                 except BackendError as exc:
+                    if handle_backend_error(exc):
+                        return
                     callout(f"Could not save changes: {exc}", level="danger")
                     return
                 st.success("Saved. Reload the host page to see the new values.")
@@ -84,11 +85,8 @@ def _render_widget_row(client: BackendClient, widget: AdminWidget, *, allowlist_
 
 
 def main() -> None:
-    apply_page_chrome("Widgets", icon="🪟")
-    client = BackendClient()
-    session = require_session(client)
-    client.token = session.token
-    render_sidebar_account(session)
+    session = page_session()
+    client = BackendClient(token=session.token)
 
     st.markdown("<h1>Widgets</h1>", unsafe_allow_html=True)
     st.markdown(
@@ -97,16 +95,22 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
+    slot = st.empty()
+    with slot.container():
+        ui.loading_skeleton(3)
+
     try:
         widgets = client.list_widgets()
         allowed_origins = client.list_allowed_origins()
-    except BackendUnauthorizedError:
-        clear_session()
-        st.rerun()
-        return
     except BackendError as exc:
-        callout(f"Could not load widgets: {exc}", level="danger")
+        slot.empty()
+        if handle_backend_error(exc):
+            return
+        if ui.error_state(f"Could not load widgets: {exc}", key="widgets-retry"):
+            st.rerun()
         return
+
+    slot.empty()
 
     allowlist_empty = len(allowed_origins) == 0
     if allowlist_empty:
@@ -128,16 +132,18 @@ def main() -> None:
             try:
                 client.create_widget(name=new_name, greeting=new_greeting)
             except BackendError as exc:
+                if handle_backend_error(exc):
+                    return
                 callout(f"Could not create widget: {exc}", level="danger")
             else:
                 st.rerun()
 
     section("Your widgets")
     if not widgets:
-        st.markdown(
-            '<div class="albert-callout albert-callout-info">'
-            "No widgets yet. Create one above to get started.</div>",
-            unsafe_allow_html=True,
+        ui.empty_state(
+            "No widgets yet",
+            description="Create one above to get started.",
+            icon="🪟",
         )
         return
     for widget in widgets:

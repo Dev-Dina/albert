@@ -20,19 +20,46 @@ import streamlit as st
 COLORS = {
     "primary": "#2563eb",       # blue-600
     "primary_hover": "#1d4ed8", # blue-700
+    "secondary": "#475569",     # slate-600 — secondary intent (neutral action)
+    "secondary_hover": "#334155", # slate-700
+    "destructive": "#dc2626",   # red-600 — destructive intent (alias of danger)
+    "destructive_hover": "#b91c1c", # red-700
     "surface": "#ffffff",
     "background": "#f8fafc",    # slate-50
+    "hover_bg": "#f1f5f9",      # slate-100 — row hover
+    "selected_bg": "#eff6ff",   # blue-50 — selected row
+    "focus_ring": "#2563eb",    # blue-600 — visible focus outline
     "border": "#e2e8f0",        # slate-200
     "border_strong": "#cbd5e1", # slate-300
     "text_primary": "#0f172a",  # slate-900
     "text_secondary": "#475569",# slate-600
-    "text_muted": "#94a3b8",    # slate-400
-    "danger": "#dc2626",        # red-600
+    "text_muted": "#64748b",    # slate-500 — AA-compliant muted text (≥4.5 on surface)
+    "danger": "#b91c1c",        # red-700 — AA-compliant on danger_bg
     "danger_bg": "#fef2f2",
-    "warning": "#d97706",       # amber-600
+    "warning": "#b45309",       # amber-700 — AA-compliant on warning_bg
     "warning_bg": "#fffbeb",
-    "success": "#059669",       # emerald-600
+    "success": "#047857",       # emerald-700 — AA-compliant on success_bg
     "success_bg": "#ecfdf5",
+}
+
+# Type scale (rem) — a single modular scale shared by both surfaces (FR-040).
+TYPE_SCALE = {
+    "display": "1.75rem",   # h1
+    "title": "1.25rem",     # h2
+    "subtitle": "1rem",     # h3
+    "body": "0.9375rem",
+    "meta": "0.875rem",
+    "caption": "0.8125rem",
+}
+
+# Spacing scale (rem) on a 4 / 8 rhythm — referenced by component CSS below.
+SPACING = {
+    "xs": "0.25rem",
+    "sm": "0.5rem",
+    "md": "0.75rem",
+    "lg": "1rem",
+    "xl": "1.5rem",
+    "2xl": "2rem",
 }
 
 
@@ -111,6 +138,161 @@ div.stButton > button[kind="primary"]:hover {{
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.875rem;
+}}
+
+/* --- Focus ring (FR-047): visible on every interactive element --------- */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+div.stButton > button:focus-visible {{
+  outline: 2px solid {COLORS['focus_ring']} !important;
+  outline-offset: 2px !important;
+  border-radius: 8px;
+}}
+
+/* --- Secondary / destructive button intents (FR-040) ------------------- */
+.albert-intent-secondary div.stButton > button {{
+  background: {COLORS['surface']};
+  color: {COLORS['secondary']};
+  border: 1px solid {COLORS['border_strong']};
+  font-weight: 600;
+  border-radius: 8px;
+}}
+.albert-intent-secondary div.stButton > button:hover {{
+  background: {COLORS['hover_bg']};
+  border-color: {COLORS['secondary_hover']};
+  color: {COLORS['secondary_hover']};
+}}
+.albert-intent-destructive div.stButton > button {{
+  background: {COLORS['destructive']};
+  border-color: {COLORS['destructive']};
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 8px;
+}}
+.albert-intent-destructive div.stButton > button:hover {{
+  background: {COLORS['destructive_hover']};
+  border-color: {COLORS['destructive_hover']};
+}}
+
+/* --- Bento grid + card (FR-041) ---------------------------------------- */
+.albert-card {{
+  background: {COLORS['surface']};
+  border: 1px solid {COLORS['border']};
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  height: 100%;
+}}
+.albert-card-metric {{
+  font-variant-numeric: tabular-nums;
+  font-size: 2rem;
+  font-weight: 700;
+  color: {COLORS['text_primary']};
+  line-height: 1.1;
+}}
+.albert-card-label {{
+  font-size: {TYPE_SCALE['caption']};
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: {COLORS['text_muted']};
+  margin-bottom: 0.25rem;
+}}
+
+/* --- Data table: sticky header, row hover, selected (FR-046) ----------- */
+.albert-table-wrap {{
+  border: 1px solid {COLORS['border']};
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 70vh;
+}}
+table.albert-table {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: {TYPE_SCALE['meta']};
+}}
+table.albert-table thead th {{
+  position: sticky;
+  top: 0;
+  background: {COLORS['background']};
+  color: {COLORS['text_secondary']};
+  text-align: left;
+  font-weight: 600;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid {COLORS['border']};
+  z-index: 1;
+}}
+table.albert-table tbody td {{
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid {COLORS['border']};
+  color: {COLORS['text_primary']};
+}}
+table.albert-table tbody tr:hover {{ background: {COLORS['hover_bg']}; }}
+table.albert-table tbody tr.is-selected {{ background: {COLORS['selected_bg']}; }}
+
+/* --- Sparkline (FR-015 cost overview) ---------------------------------- */
+.albert-sparkline {{ display: inline-block; vertical-align: middle; }}
+.albert-sparkline polyline {{ fill: none; stroke: {COLORS['primary']}; stroke-width: 1.5; }}
+.albert-sparkline .albert-sparkline-area {{ fill: {COLORS['selected_bg']}; stroke: none; }}
+
+/* --- Timeline (FR-016 audit log) --------------------------------------- */
+.albert-timeline {{ list-style: none; margin: 0; padding: 0; }}
+.albert-timeline-item {{
+  position: relative;
+  padding: 0 0 1rem 1.25rem;
+  border-left: 2px solid {COLORS['border']};
+}}
+.albert-timeline-item::before {{
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 0.25rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: {COLORS['primary']};
+}}
+.albert-timeline-item:last-child {{ border-left-color: transparent; }}
+.albert-timeline-meta {{ color: {COLORS['text_muted']}; font-size: {TYPE_SCALE['caption']}; }}
+
+/* --- Code block (FR-021 embed snippet; Pygments writes .highlight) ----- */
+.albert-codeblock, .albert-codeblock .highlight {{
+  background: #0f172a;
+  border-radius: 10px;
+  padding: 1rem 1.125rem;
+  overflow: auto;
+}}
+.albert-codeblock pre, .albert-codeblock code {{
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: {TYPE_SCALE['caption']};
+  color: #e2e8f0;
+  margin: 0;
+}}
+
+/* --- Empty / loading / error states (FR-042–FR-044) -------------------- */
+.albert-empty {{
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  color: {COLORS['text_secondary']};
+  border: 1px dashed {COLORS['border_strong']};
+  border-radius: 12px;
+  background: {COLORS['background']};
+}}
+.albert-empty-icon {{ font-size: 1.75rem; opacity: 0.6; }}
+.albert-skeleton {{
+  background: linear-gradient(90deg, {COLORS['background']} 25%, {COLORS['hover_bg']} 37%, {COLORS['background']} 63%);
+  background-size: 400% 100%;
+  animation: albert-shimmer 1.4s ease infinite;
+  border-radius: 8px;
+  height: 1rem;
+  margin: 0.5rem 0;
+}}
+@keyframes albert-shimmer {{
+  0% {{ background-position: 100% 50%; }}
+  100% {{ background-position: 0 50%; }}
 }}
 </style>
 """
