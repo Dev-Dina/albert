@@ -106,7 +106,7 @@ async def get_widget_session(
 ) -> AsyncIterator[WidgetSessionClaims]:
     """Resolve a widget visitor's verified session claims.
 
-    Sets ``app.tenant_id`` on the request's DB session so all subsequent
+    Sets ``app.current_tenant`` on the request's DB session so all subsequent
     tenant-scoped queries are gated by RLS for the lifetime of the request.
     Returns 401 on any failure; NEVER leaks why (signature mismatch vs.
     expiry vs. rotation vs. origin re-check failure).
@@ -130,37 +130,45 @@ async def get_widget_session(
     except (JWTError, KeyError, ValueError, TypeError) as exc:
         raise _widget_credentials_exc from exc
 
-    active = await _fetch_active_key_version(db, tenant_id)
-    if active is None or active.version != kvr_claim:
-        raise _widget_credentials_exc
-
-    key_material = await vault_client.read_tenant_widget_signing_key(tenant_id)
-    if key_material is None:
-        raise _widget_credentials_exc
-
-    try:
-        claims = verify_widget_session_token(
-            token,
-            key_material=key_material,
-            expected_key_version=active.version,
-        )
-    except WidgetTokenError as exc:
-        raise _widget_credentials_exc from exc
-
-    # Origin re-check (T059a). The token's own ``org`` claim is informational;
-    # we re-evaluate against the live allowlist so an admin removing an
-    # origin invalidates outstanding tokens from that origin on the very next
-    # request (SC-008). Missing Origin header → 401 (uniform refusal).
-    origin = request.headers.get("origin")
-    if not origin:
-        raise _widget_credentials_exc
     from app.repositories import allowed_origin_repo
 
-    origin_ok = await allowed_origin_repo.exists_for_tenant(
-        db, claims.tenant_id, origin
-    )
-    if not origin_ok:
-        raise _widget_credentials_exc
+    # The signing-key-version and allowed-origin reads below hit tenant-scoped
+    # tables under FORCE ROW LEVEL SECURITY. The runtime role is non-superuser /
+    # NOBYPASSRLS, so they must run with app.current_tenant set or RLS filters
+    # every row (→ spurious 401). Scope to the token-claimed tenant: an attacker
+    # claiming another tenant only loads THAT tenant's key and fails signature
+    # verification below, so this is safe and leaks nothing cross-tenant. The
+    # context stays set through the yield so the request runs tenant-scoped.
+    async with tenant_context(db, tenant_id):
+        active = await _fetch_active_key_version(db, tenant_id)
+        if active is None or active.version != kvr_claim:
+            raise _widget_credentials_exc
 
-    async with tenant_context(db, claims.tenant_id):
+        key_material = await vault_client.read_tenant_widget_signing_key(tenant_id)
+        if key_material is None:
+            raise _widget_credentials_exc
+
+        try:
+            claims = verify_widget_session_token(
+                token,
+                key_material=key_material,
+                expected_key_version=active.version,
+            )
+        except WidgetTokenError as exc:
+            raise _widget_credentials_exc from exc
+
+        # Origin re-check (T059a). The token's own ``org`` claim is informational;
+        # we re-evaluate against the live allowlist so an admin removing an
+        # origin invalidates outstanding tokens from that origin on the very next
+        # request (SC-008). Missing Origin header → 401 (uniform refusal).
+        origin = request.headers.get("origin")
+        if not origin:
+            raise _widget_credentials_exc
+
+        origin_ok = await allowed_origin_repo.exists_for_tenant(
+            db, claims.tenant_id, origin
+        )
+        if not origin_ok:
+            raise _widget_credentials_exc
+
         yield claims

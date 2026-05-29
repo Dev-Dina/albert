@@ -1,8 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.router import classify_and_route
+from app.services.router import classify_and_route, handler_for_label
 
 
 def _mock_response(label: str, confidence: float) -> MagicMock:
@@ -20,8 +20,17 @@ def _setup_mock_client(mock_client_cls: MagicMock, label: str, confidence: float
     return mock_client
 
 
+def test_handler_for_label_mapping():
+    assert handler_for_label("spam") == "drop"
+    assert handler_for_label("faq_rag") == "rag"
+    assert handler_for_label("lead_capture") == "lead"
+    assert handler_for_label("human_escalate") == "escalate"
+    assert handler_for_label("other_agent") == "agent"
+    assert handler_for_label("anything_else") == "agent"
+
+
 @pytest.mark.asyncio
-async def test_faq_rag_routes_to_agent():
+async def test_faq_rag_routes_to_rag_workflow():
     with patch("app.services.router.httpx.AsyncClient") as mock_client_cls:
         mock_client = _setup_mock_client(mock_client_cls, "faq_rag", 0.95)
         decision = await classify_and_route("What are your hours?", "tenant-a")
@@ -30,35 +39,32 @@ async def test_faq_rag_routes_to_agent():
     _, kwargs = mock_client.post.call_args
     assert kwargs["json"] == {"text": "What are your hours?"}
 
-    assert decision.action == "agent"
+    assert decision.handler == "rag"
+    assert decision.action == "direct"
     assert decision.label == "faq_rag"
-    assert decision.routed_to == "agent"
+    assert decision.routed_to == "workflow"
 
 
 @pytest.mark.asyncio
-async def test_lead_capture_routes_to_agent():
+async def test_lead_capture_routes_to_lead_workflow():
     with patch("app.services.router.httpx.AsyncClient") as mock_client_cls:
-        mock_client = _setup_mock_client(mock_client_cls, "lead_capture", 0.92)
-        decision = await classify_and_route("I'd like to sign up", "tenant-a")
+        _setup_mock_client(mock_client_cls, "lead_capture", 0.92)
+        decision = await classify_and_route("Please have sales email me", "tenant-a")
 
-    mock_client.post.assert_called_once()
-    _, kwargs = mock_client.post.call_args
-    assert kwargs["json"] == {"text": "I'd like to sign up"}
-
-    assert decision.action == "agent"
+    assert decision.handler == "lead"
+    assert decision.routed_to == "workflow"
     assert decision.label == "lead_capture"
-    assert decision.routed_to == "agent"
 
 
 @pytest.mark.asyncio
-async def test_human_escalate_routes_to_agent():
+async def test_human_escalate_routes_to_escalate_workflow():
     with patch("app.services.router.httpx.AsyncClient") as mock_client_cls:
         _setup_mock_client(mock_client_cls, "human_escalate", 0.90)
         decision = await classify_and_route("I need to speak to a human", "tenant-a")
 
-    assert decision.action == "agent"
+    assert decision.handler == "escalate"
+    assert decision.routed_to == "workflow"
     assert decision.label == "human_escalate"
-    assert decision.routed_to == "agent"
 
 
 @pytest.mark.asyncio
@@ -67,6 +73,7 @@ async def test_spam_is_dropped():
         _setup_mock_client(mock_client_cls, "spam", 0.98)
         decision = await classify_and_route("BUY CHEAP MEDS NOW", "tenant-a")
 
+    assert decision.handler == "drop"
     assert decision.action == "direct"
     assert decision.label == "spam"
     assert decision.reply is None
@@ -78,6 +85,7 @@ async def test_other_agent_routes_to_agent():
         _setup_mock_client(mock_client_cls, "other_agent", 0.85)
         decision = await classify_and_route("Tell me about yourself", "tenant-a")
 
+    assert decision.handler == "agent"
     assert decision.action == "agent"
     assert decision.label == "other_agent"
     assert decision.routed_to == "agent"
@@ -89,7 +97,7 @@ async def test_low_confidence_falls_back_to_agent():
         _setup_mock_client(mock_client_cls, "faq_rag", 0.3)
         decision = await classify_and_route("hi there", "tenant-a")
 
-    assert decision.action == "agent"
+    assert decision.handler == "agent"
     assert decision.routed_to == "agent"
 
 
@@ -103,7 +111,7 @@ async def test_http_error_falls_back_to_agent():
 
         decision = await classify_and_route("hello", "tenant-a")
 
-    assert decision.action == "agent"
+    assert decision.handler == "agent"
     assert decision.label == "unknown"
 
 
@@ -113,7 +121,7 @@ async def test_ambiguous_label_falls_back_to_agent():
         _setup_mock_client(mock_client_cls, "ambiguous", 0.85)
         decision = await classify_and_route("what is the meaning of life?", "tenant-a")
 
-    assert decision.action == "agent"
+    assert decision.handler == "agent"
     assert decision.routed_to == "agent"
 
 

@@ -109,10 +109,10 @@ backend/
 evals/
 ├── tool_selection.jsonl       ← NEW: 15 labelled examples
 ├── tool_selection_eval.py     ← NEW: eval script
-└── eval_thresholds.yaml       ← UPDATE: add tool_selection_accuracy threshold
+└── ../eval_thresholds.yaml    ← UPDATE: add agent_tool_selection.accuracy_min
 
 .github/workflows/
-└── rag-eval.yml               ← UPDATE: add tool-selection eval step
+└── ci.yml                     ← UPDATE: add tool-selection eval step
 ```
 
 **Structure Decision**: Web service (Option 2). All new code follows existing backend layer conventions.
@@ -175,4 +175,4 @@ app.state.redis = aioredis.from_url(settings.redis_url or "redis://localhost:637
 - For each: calls `run_agent()` with a mock LLM that returns the first tool call the real model would make (or use a replay approach with the real LLM)
 - Simpler approach: direct unit-style check — call `_dispatch_tool` decision logic or mock agent responses
 - Counts correct/total, prints per-example pass/fail
-- Exits 1 if `accuracy < eval_thresholds.yaml[tool_selection_accuracy]`
+- Exits 1 if `accuracy < eval_thresholds.yaml[agent_tool_selection.accuracy_min]`

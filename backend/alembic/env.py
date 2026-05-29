@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -19,8 +20,14 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Tenant context / connection string come from verified settings, never from CLI input.
-config.set_main_option("sqlalchemy.url", settings.database_url or "")
+# Connection string comes from verified settings, never from CLI input.
+# Migrations run DDL and create roles, so they need the admin/superuser login.
+# Prefer MIGRATION_DATABASE_URL (admin) when set; otherwise fall back to the
+# runtime DATABASE_URL. The runtime app role (DATABASE_URL) is intentionally a
+# non-superuser and cannot create roles, so production migrations must supply
+# MIGRATION_DATABASE_URL.
+_migration_url = os.getenv("MIGRATION_DATABASE_URL")
+config.set_main_option("sqlalchemy.url", _migration_url or settings.database_url or "")
 
 target_metadata = Base.metadata
 

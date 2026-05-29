@@ -1,6 +1,6 @@
 """Per-request tenant context.
 
-Sets the PostgreSQL session-local variable ``app.tenant_id`` so RLS policies
+Sets the PostgreSQL session-local variable ``app.current_tenant`` so RLS policies
 on tenant-scoped tables resolve to exactly the calling tenant's rows. A
 request without a tenant context set will see zero rows from tenant-scoped
 tables (RLS policies ENABLE + FORCE), which is the intended fail-closed
@@ -17,10 +17,12 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.tenancy.rls import TENANT_CONTEXT_GUC
+
 
 @asynccontextmanager
 async def tenant_context(session: AsyncSession, tenant_id: uuid.UUID) -> AsyncIterator[None]:
-    """Set ``app.tenant_id`` for the surrounding block.
+    """Set ``app.current_tenant`` for the surrounding block.
 
     Uses ``set_config(..., true)`` so the variable is bound to the current
     transaction and is automatically cleared when the transaction ends.
@@ -30,9 +32,8 @@ async def tenant_context(session: AsyncSession, tenant_id: uuid.UUID) -> AsyncIt
     if not isinstance(tenant_id, uuid.UUID):
         raise TypeError("tenant_id must be a uuid.UUID")
     await session.execute(
-        text("SELECT set_config('app.tenant_id', :tid, true)").bindparams(
-            tid=str(tenant_id)
-        )
+        text("SELECT set_config(:var, :tid, true)"),
+        {"var": TENANT_CONTEXT_GUC, "tid": str(tenant_id)},
     )
     try:
         yield
@@ -41,5 +42,6 @@ async def tenant_context(session: AsyncSession, tenant_id: uuid.UUID) -> AsyncIt
         # transaction for non-tenant work after exit. ``set_config(..., true)``
         # with an empty value resets the GUC for this transaction.
         await session.execute(
-            text("SELECT set_config('app.tenant_id', '', true)")
+            text("SELECT set_config(:var, '', true)"),
+            {"var": TENANT_CONTEXT_GUC},
         )

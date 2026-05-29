@@ -24,7 +24,7 @@ async def check_input(payload: GuardrailRequest, request: Request) -> GuardrailR
     request_id = request.headers.get("X-Request-ID")
     if request_id:
         safe_set_span_attribute("request_id", request_id)
-    response = evaluate_input(payload)
+    response = await evaluate_input(payload)
     safe_set_span_attribute("guardrail_decision", response.decision)
     safe_set_span_attribute("redaction_count", response.redaction_summary.total if response.redaction_summary else 0)
     return response
@@ -37,7 +37,7 @@ async def check_output(payload: GuardrailRequest, request: Request) -> Guardrail
     request_id = request.headers.get("X-Request-ID")
     if request_id:
         safe_set_span_attribute("request_id", request_id)
-    response = evaluate_output(payload)
+    response = await evaluate_output(payload)
     safe_set_span_attribute("guardrail_decision", response.decision)
     safe_set_span_attribute("redaction_count", response.redaction_summary.total if response.redaction_summary else 0)
     return response

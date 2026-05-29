@@ -2,12 +2,22 @@ import json
 import logging
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.core.config import settings
 from app.core.secrets import get_secret_value
 
 logger = logging.getLogger(__name__)
+
+
+class LLMProviderError(Exception):
+    """The upstream LLM provider failed (404/unavailable/quota/auth, etc.).
+
+    Raised at the adapter boundary so callers can return a controlled 5xx
+    instead of leaking a raw provider stack trace. Carries no prompt text,
+    API key, or other sensitive content.
+    """
 
 
 class LLMAdapter:
@@ -88,11 +98,24 @@ class LLMAdapter:
             tools=gemini_tools,
         )
 
-        response = await self._client.aio.models.generate_content(
-            model=resolved_model,
-            contents=contents,
-            config=config,
-        )
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=resolved_model,
+                contents=contents,
+                config=config,
+            )
+        except genai_errors.APIError as exc:
+            # Provider 4xx/5xx (e.g. model 404, quota, auth). Log only the model
+            # and status code — never the prompt, contents, key, or full message.
+            logger.warning(
+                "llm.provider_error tenant=%s model=%s code=%s",
+                tenant_id,
+                resolved_model,
+                getattr(exc, "code", "unknown"),
+            )
+            raise LLMProviderError(
+                f"LLM provider error (model={resolved_model}, code={getattr(exc, 'code', 'unknown')})"
+            ) from exc
 
         return _GeminiResponseWrapper(response)
 

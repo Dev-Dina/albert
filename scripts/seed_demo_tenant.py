@@ -35,6 +35,7 @@ from app.db.models.widget import Widget  # noqa: E402
 from app.db.models.widget_allowed_origin import WidgetAllowedOrigin  # noqa: E402
 from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion  # noqa: E402
 from app.db.session import AsyncSessionLocal  # noqa: E402
+from app.tenancy.rls import set_tenant_context  # noqa: E402
 
 _BASE62 = string.ascii_letters + string.digits
 
@@ -43,12 +44,25 @@ def _generate_public_widget_id() -> str:
     return "".join(secrets.choice(_BASE62) for _ in range(22))
 
 
+async def _set_tenant_context(session: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Set the per-transaction tenant context required by RLS policies.
+
+    Tenant-scoped tables (memberships, widget origins, widgets, signing-key
+    metadata) are protected by RLS. This delegates to the app's canonical helper
+    so the seed uses the EXACT same tenant-context mechanism as normal requests —
+    the GUC ``app.current_tenant`` (NOT ``app.tenant_id``) — instead of bypassing
+    isolation. Transaction-local (``set_config(..., true)``); reverts on commit.
+    """
+    await set_tenant_context(session, tenant_id)
+
+
 async def _get_or_create_tenant(session: AsyncSession, slug: str, name: str) -> Tenant:
     existing = (
         await session.execute(select(Tenant).where(Tenant.slug == slug))
     ).scalar_one_or_none()
     if existing is not None:
         return existing
+
     tenant = Tenant(name=name, slug=slug, status="active")
     session.add(tenant)
     await session.flush()
@@ -61,6 +75,7 @@ async def _get_or_create_admin(session: AsyncSession, email: str, password: str)
     ).scalar_one_or_none()
     if existing is not None:
         return existing
+
     user = User(
         email=email,
         hashed_password=hash_password(password),
@@ -73,7 +88,10 @@ async def _get_or_create_admin(session: AsyncSession, email: str, password: str)
 
 
 async def _ensure_membership(
-    session: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID, role: str = "tenant_admin"
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role: str = "tenant_admin",
 ) -> None:
     existing = (
         await session.execute(
@@ -83,12 +101,16 @@ async def _ensure_membership(
             )
         )
     ).scalar_one_or_none()
+
     if existing is None:
         session.add(TenantMembership(tenant_id=tenant_id, user_id=user_id, role=role))
 
 
 async def _ensure_allowed_origin(
-    session: AsyncSession, tenant_id: uuid.UUID, origin: str, actor_user_id: uuid.UUID
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    origin: str,
+    actor_user_id: uuid.UUID,
 ) -> None:
     existing = (
         await session.execute(
@@ -98,22 +120,29 @@ async def _ensure_allowed_origin(
             )
         )
     ).scalar_one_or_none()
+
     if existing is None:
         session.add(
             WidgetAllowedOrigin(
-                tenant_id=tenant_id, origin=origin, created_by_user_id=actor_user_id
+                tenant_id=tenant_id,
+                origin=origin,
+                created_by_user_id=actor_user_id,
             )
         )
 
 
 async def _ensure_widget(
-    session: AsyncSession, tenant_id: uuid.UUID, name: str, greeting: str
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    name: str,
+    greeting: str,
 ) -> Widget:
     existing = (
         await session.execute(select(Widget).where(Widget.tenant_id == tenant_id))
     ).scalar_one_or_none()
     if existing is not None:
         return existing
+
     widget = Widget(
         tenant_id=tenant_id,
         public_widget_id=_generate_public_widget_id(),
@@ -128,9 +157,11 @@ async def _ensure_widget(
 
 
 async def _ensure_signing_key(
-    session: AsyncSession, tenant_id: uuid.UUID, actor_user_id: uuid.UUID
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
 ) -> int:
-    """Mint the tenant's first signing key (the same code path as rotate)."""
+    """Mint the tenant's first signing key using the same path as rotation."""
     existing = (
         await session.execute(
             select(WidgetSigningKeyVersion).where(
@@ -139,6 +170,7 @@ async def _ensure_signing_key(
             )
         )
     ).scalar_one_or_none()
+
     if existing is not None:
         return int(existing.version)
 
@@ -146,6 +178,7 @@ async def _ensure_signing_key(
     version = await vault_client.write_tenant_widget_signing_key(tenant_id, material)
     if version is None:
         raise RuntimeError("failed to write signing key to Vault")
+
     session.add(
         WidgetSigningKeyVersion(
             tenant_id=tenant_id,
@@ -161,10 +194,18 @@ async def seed(slug: str, origin: str) -> dict[str, str]:
     async with AsyncSessionLocal() as session:
         async with session.begin():
             tenant = await _get_or_create_tenant(
-                session, slug=slug, name=slug.capitalize()
+                session,
+                slug=slug,
+                name=slug.capitalize(),
             )
+
+            # Required for RLS-protected tenant-scoped writes below.
+            await _set_tenant_context(session, tenant.id)
+
             admin = await _get_or_create_admin(
-                session, email=f"admin-{slug}@example.com", password="admin123"
+                session,
+                email=f"admin-{slug}@example.com",
+                password="admin123",
             )
             await _ensure_membership(session, tenant.id, admin.id, role="tenant_admin")
             await _ensure_allowed_origin(session, tenant.id, origin, admin.id)
@@ -175,6 +216,7 @@ async def seed(slug: str, origin: str) -> dict[str, str]:
                 greeting=f"Hi! I'm {tenant.name}'s assistant.",
             )
             key_version = await _ensure_signing_key(session, tenant.id, admin.id)
+
         return {
             "tenant_id": str(tenant.id),
             "tenant_slug": tenant.slug,
@@ -195,10 +237,12 @@ def main() -> int:
         help="Allowed origin for the demo host page",
     )
     args = parser.parse_args()
+
     summary = asyncio.run(seed(args.slug, args.origin))
     print("Seeded demo tenant:")
-    for k, v in summary.items():
-        print(f"  {k}: {v}")
+    for key, value in summary.items():
+        print(f"  {key}: {value}")
+
     return 0
 
 

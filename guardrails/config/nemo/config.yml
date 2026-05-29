@@ -1,0 +1,18 @@
+# NeMo Guardrails config for Albert's tenant TOPICAL rails.
+#
+# No LLM (`models: []`) and no embeddings: the tenant allowed/blocked-topic policy
+# is enforced by a registered custom Python action (`check_topic_policy`, see
+# app/services/nemo_adapter.py). This keeps the sidecar offline and free of paid
+# LLM calls and runtime model downloads.
+#
+# NOTE: the deterministic PLATFORM deny rules (prompt-injection, jailbreak,
+# cross-tenant, tenant-id override, tool-abuse, secret-extraction) are NOT defined
+# here — they run FIRST in app/rails.py and short-circuit before NeMo is consulted,
+# so tenant/topical rails can only ADD a block, never weaken a platform deny.
+# Redaction is also separate (app/redaction.py).
+models: []
+
+rails:
+  input:
+    flows:
+      - tenant topic policy

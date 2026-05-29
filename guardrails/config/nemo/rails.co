@@ -1,0 +1,13 @@
+# Colang 1.0 — tenant topical input rail.
+# Delegates the allowed/blocked-topic decision to the registered custom action
+# `check_topic_policy` (deterministic; no LLM, no embeddings). On a block the rail
+# emits a fixed marker the adapter detects; otherwise the input passes through.
+
+define flow tenant topic policy
+  $blocked = execute check_topic_policy
+  if $blocked
+    bot refuse topic
+    stop
+
+define bot refuse topic
+  "__TENANT_TOPIC_BLOCKED__"

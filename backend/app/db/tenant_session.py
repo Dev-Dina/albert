@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
+from app.tenancy.rls import TENANT_CONTEXT_GUC
 
 
 async def get_tenant_db(tenant_id: str) -> AsyncGenerator[AsyncSession, None]:
@@ -15,12 +16,13 @@ async def get_tenant_db(tenant_id: str) -> AsyncGenerator[AsyncSession, None]:
     """
     async with AsyncSessionLocal() as session:
         await session.execute(
-            text("SELECT set_config('app.current_tenant', :tid, true)"),
-            {"tid": tenant_id},
+            text("SELECT set_config(:var, :tid, true)"),
+            {"var": TENANT_CONTEXT_GUC, "tid": tenant_id},
         )
         try:
             yield session
         finally:
             await session.execute(
-                text("SELECT set_config('app.current_tenant', '', true)")
+                text("SELECT set_config(:var, '', true)"),
+                {"var": TENANT_CONTEXT_GUC},
             )

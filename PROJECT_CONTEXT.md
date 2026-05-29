@@ -29,7 +29,7 @@ The hard problem is **isolation**. A working agent that leaks across tenants sco
 ```
 api/                FastAPI backend — the ONE backend for everything
 modelserver/        Lean classifier server — onnxruntime + sklearn only, NO torch
-guardrails/         NeMo guardrails sidecar — called over HTTP with a service credential
+guardrails/         NeMo Guardrails sidecar (deterministic platform-deny prefilter + NeMo tenant topical rails) — called over HTTP with a service credential
 widget/             React widget (Vite) — embeds on tenant's public site
 admin/              Streamlit — tenant admin config page
 training/           Notebooks only — NEVER shipped, NEVER in a container
@@ -59,18 +59,18 @@ training/           Notebooks only — NEVER shipped, NEVER in a container
 Every tenant-scoped table has:
 - A `tenant_id UUID` column on every row
 - `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;`
-- One RLS policy using `current_setting('app.tenant_id', true)`
+- One RLS policy using `current_setting('app.current_tenant', true)`
 
 Correct policy shape:
 ```sql
 CREATE POLICY tenant_isolation ON conversations
   USING (
-    tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid
+    tenant_id = nullif(current_setting('app.current_tenant', true), '')::uuid
   );
 ```
 
 Two critical gotchas:
-1. `current_setting('app.tenant_id', true)` — the second arg `true` means "return empty/null if unset instead of erroring." A null/empty comparison yields **zero rows** — which is the safe default.
+1. `current_setting('app.current_tenant', true)` — the second arg `true` means "return empty/null if unset instead of erroring." A null/empty comparison yields **zero rows** — which is the safe default.
 2. After a transaction-local variable has been set once on a connection, `current_setting` can return **empty string** rather than NULL. The policy must use `nullif(..., '')` to handle both cases. A policy that only handles NULL has a real gap.
 3. RLS does **not** apply to the table owner/superuser unless `FORCE ROW LEVEL SECURITY` is also set. The app must connect as a non-superuser role, or RLS silently won't enforce.
 
@@ -78,7 +78,7 @@ Two critical gotchas:
 The correct form for pooled connections is **transaction-local**:
 ```python
 await db.execute(
-    text("SELECT set_config('app.tenant_id', :tid, true)"),
+    text("SELECT set_config('app.current_tenant', :tid, true)"),
     {"tid": str(tenant_id)},
 )
 ```
@@ -193,8 +193,15 @@ The token's `tenant_id` claim is the only source of tenant identity for widget r
 - Agent persona
 - Enabled tools (a subset of the three — a tenant may disable escalate, for instance)
 
+### Engine: NeMo Guardrails + deterministic platform-deny prefilter
+The sidecar runs **NeMo Guardrails** for the configurable tenant topical/conversation
+rails, behind a **deterministic platform-deny prefilter** that runs first (so a tenant
+can never weaken a platform deny). NeMo runs with no LLM and no embeddings (a custom
+Python action enforces topic policy); redaction is separate. NeMo lives only in the
+guardrails service — never in the backend or modelserver.
+
 ### Guardrails are a separate sidecar service
-The API calls the NeMo guardrails sidecar over HTTP with a service credential. It is not an import. It is a trust boundary.
+The API calls the NeMo Guardrails sidecar (deterministic platform-deny prefilter + NeMo tenant topical rails) over HTTP with a service credential. It is not an import. It is a trust boundary.
 
 ---
 
@@ -206,7 +213,7 @@ The API calls the NeMo guardrails sidecar over HTTP with a service credential. I
 | NO `transformers` | Same reason |
 | Image size | Must be under 500MB |
 | Serving runtime | `onnxruntime` for the DL model, `scikit-learn`+`joblib` for classical |
-| SHA-256 guard | On artifact SHA-256 ≠ the pinned hash in `MODEL_CARD.md`, the server fails closed: `/classify` returns 503 and the mismatched model is never used (the service may still boot to expose health/error diagnostics) |
+| SHA-256 guard | On artifact SHA-256 ≠ the pinned hash in `MODEL_CARD.md`, the server fails closed: `/predict` returns 503 and the mismatched model is never used (the service may still boot to expose health/error diagnostics) |
 | Training | Happens in `training/` notebooks / Colab only — never in a container |
 
 Training is ephemeral (GPU, torch, Colab). Serving is lean (onnxruntime, sklearn). They never share a container.
@@ -314,8 +321,8 @@ If you are an AI assistant reading this file:
 
 - **Isolation is the primary constraint** on every code suggestion. Before suggesting a query, check it is scoped by `tenant_id` at both the RLS layer and the repo layer.
 - **Never suggest reading `tenant_id` from user-controlled input.** Always from the verified token or RLS context.
-- **`set_config('app.tenant_id', id, true)`** — the third argument must be `true` (transaction-local). Session-local (`false`) with pooled connections will leak.
-- **The RLS policy must use `nullif(current_setting('app.tenant_id', true), '')`** — handling both NULL and empty-string cases.
+- **`set_config('app.current_tenant', id, true)`** — the third argument must be `true` (transaction-local). Session-local (`false`) with pooled connections will leak.
+- **The RLS policy must use `nullif(current_setting('app.current_tenant', true), '')`** — handling both NULL and empty-string cases.
 - **No `torch` in any container.** If a user asks you to add torch to the modelserver, refuse and explain the ONNX serving pattern.
 - **The agent is bounded.** Any suggested agent loop must include iteration and token caps.
 - **Tests before features.** Suggest the isolation/leak test when suggesting a new tenant-scoped feature.
@@ -332,7 +339,7 @@ These are confirmed against documentation and production patterns — not from m
 ### Transaction-local RLS context (verified)
 ```python
 await db.execute(
-    text("SELECT set_config('app.tenant_id', :tid, true)"),
+    text("SELECT set_config('app.current_tenant', :tid, true)"),
     {"tid": str(tenant_id)},
 )
 ```
@@ -342,7 +349,7 @@ Transaction commits or rolls back → value reverts automatically → pooled con
 ```sql
 CREATE POLICY tenant_isolation ON <table>
   USING (
-    tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid
+    tenant_id = nullif(current_setting('app.current_tenant', true), '')::uuid
   );
 ```
 Handles both NULL and empty-string on pooled connections. Safe default: no context = zero rows.

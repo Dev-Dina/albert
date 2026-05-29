@@ -76,9 +76,9 @@
 ### Implementation
 
 - [x] T018 [US3] Create `evals/rag_golden.jsonl` — 15 hand-labelled triples (opening hours, returns, shipping, pricing, contact — 3 per topic)
-- [x] T019 [US3] Create `evals/rag_eval.py` — CLI with hit@5, MRR, Gemini LLM-as-judge faithfulness + relevancy; exits non-zero on threshold breach
-- [x] T020 [US3] Create `evals/eval_thresholds.yaml` — `hit_at_5: 0.6`, `mrr: 0.5`
-- [x] T021 [US3] Add eval CI step to `.github/workflows/rag-eval.yml` — runs eval harness and blocks merge on non-zero exit
+- [x] T019 [US3] Create `evals/rag_eval.py` — CLI with hit@5, MRR, and offline deterministic faithfulness + relevancy proxy metrics; exits non-zero on threshold breach without hosted API keys
+- [x] T020 [US3] Update root `eval_thresholds.yaml` — `rag.hit_at_5_min`, `rag.mrr_min`
+- [x] T021 [US3] Add eval CI steps to `.github/workflows/ci.yml` — runs the RAG eval harness and gate, blocking merge on non-zero exit
 
 **Checkpoint**: User Story 3 complete — eval harness is live and wired to CI ✅
 

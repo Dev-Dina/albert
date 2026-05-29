@@ -158,5 +158,6 @@ uv run --project guardrails python -m ruff check evals/redteam_cross_tenant/run.
 - Tracing backend: OpenTelemetry + Jaeger.
 - Service-to-service auth: `Authorization: Bearer <service credential>` with
   local `SERVICE_AUTH_TOKEN` fallback and Vault/env injection later.
-- Guardrails sidecar: deterministic rules-first platform rails; tenant rails
-  may narrow behavior but cannot weaken platform rails.
+- Guardrails sidecar: NeMo Guardrails + deterministic platform-deny prefilter.
+  Deterministic platform denies run first; NeMo runs the tenant topical rails;
+  tenant rails may narrow behavior but cannot weaken platform rails (see ADR-010).

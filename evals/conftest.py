@@ -19,7 +19,6 @@ Or set DATABASE_URL to a host-reachable DB:
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 import pytest
@@ -42,22 +41,16 @@ _DB_URL = settings.database_url or "postgresql+asyncpg://postgres:postgres@postg
 
 
 # ---------------------------------------------------------------------------
-# Engine — module-scoped so connection pool is shared across tests
+# Engine
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="module")
-def event_loop():
-    """Override the default function-scoped event loop with a module-scoped one."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture(scope="module")
-def db_engine():
+@pytest_asyncio.fixture
+async def db_engine():
     engine = create_async_engine(_DB_URL, future=True, pool_size=2, max_overflow=0)
-    yield engine
-    asyncio.run(engine.dispose())
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture

@@ -24,6 +24,7 @@ from app.auth.models import Role
 from app.auth.roles import CurrentUserDep
 from app.db.models.membership import TenantMembership
 from app.db.session import get_db
+from app.tenancy.rls import set_tenant_context
 from app.schemas.admin_widget import (
     AdminWidget,
     AllowedOrigin,
@@ -65,6 +66,14 @@ async def require_admin_identity(
 
     Refuses (403) if the caller is not a tenant_admin for some tenant. The
     response intentionally does not name which tenant.
+
+    Sets the canonical RLS tenant context (``app.current_tenant`` via
+    ``set_tenant_context``) on the request's DB session before any route code
+    runs, so every tenant-scoped read/write resolves to the caller's tenant under
+    FORCE ROW LEVEL SECURITY. The tenant id comes only from the verified token /
+    membership row — never a request body. (A ``tenant_manager`` has no
+    tenant_admin membership here, so it is refused and never gains tenant content
+    context; manager lifecycle routes live elsewhere.)
     """
     if current.user_id is None:
         raise HTTPException(
@@ -73,23 +82,26 @@ async def require_admin_identity(
         )
 
     if current.role == Role.tenant_admin and current.tenant_id is not None:
-        return AdminIdentity(user_id=current.user_id, tenant_id=current.tenant_id)
+        tenant_id = current.tenant_id
+    else:
+        result = await db.execute(
+            select(TenantMembership)
+            .where(
+                TenantMembership.user_id == current.user_id,
+                TenantMembership.role == Role.tenant_admin.value,
+            )
+            .order_by(TenantMembership.created_at.asc())
+        )
+        membership = result.scalars().first()
+        if membership is None or membership.tenant_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant admin role required.",
+            )
+        tenant_id = membership.tenant_id
 
-    result = await db.execute(
-        select(TenantMembership)
-        .where(
-            TenantMembership.user_id == current.user_id,
-            TenantMembership.role == Role.tenant_admin.value,
-        )
-        .order_by(TenantMembership.created_at.asc())
-    )
-    membership = result.scalars().first()
-    if membership is None or membership.tenant_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant admin role required.",
-        )
-    return AdminIdentity(user_id=current.user_id, tenant_id=membership.tenant_id)
+    await set_tenant_context(db, tenant_id)
+    return AdminIdentity(user_id=current.user_id, tenant_id=tenant_id)
 
 
 AdminIdentityDep = Annotated[AdminIdentity, Depends(require_admin_identity)]

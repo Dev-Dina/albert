@@ -70,9 +70,9 @@
 ### Implementation
 
 - [x] T012 [US3] Create `evals/tool_selection.jsonl` — 15 hand-labelled examples: 5× `rag_search` (knowledge questions), 3× `capture_lead` (contact/lead capture), 3× `escalate` (complaints, urgency), 4× `null` (direct answer, no tool needed — greetings, simple yes/no)
-- [x] T013 [US3] Create `evals/tool_selection_eval.py` — CLI: loads JSONL, for each example uses a mock agent that returns the mocked first tool call (or null), compares to expected_tool, prints per-example PASS/FAIL + accuracy; exits non-zero if `accuracy < eval_thresholds.yaml[tool_selection_accuracy]`
-- [x] T014 [US3] Update `evals/eval_thresholds.yaml` — add `tool_selection_accuracy: 0.8`
-- [x] T015 [US3] Update `.github/workflows/rag-eval.yml` — add tool-selection eval step that runs `tool_selection_eval.py` and blocks on non-zero exit
+- [x] T013 [US3] Create `evals/tool_selection_eval.py` — CLI: loads JSONL, for each example uses a deterministic tool selector, compares to expected_tool, prints per-example PASS/FAIL + accuracy; exits non-zero if `accuracy < eval_thresholds.yaml[agent_tool_selection.accuracy_min]`
+- [x] T014 [US3] Update root `eval_thresholds.yaml` — add `agent_tool_selection.accuracy_min`
+- [x] T015 [US3] Update `.github/workflows/ci.yml` — add tool-selection eval steps that run `tool_selection_eval.py` and `evals.tool_selection.run`, blocking on non-zero exit
 
 **Checkpoint**: User Story 3 complete — tool-selection eval harness is live and wired to CI ✅
 

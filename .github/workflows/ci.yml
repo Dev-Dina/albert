@@ -17,7 +17,6 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -186,6 +185,8 @@ jobs:
       - run: pip install pyyaml
       - name: Prepare artifact dir
         run: mkdir -p artifacts
+      - name: Run 15-case tool-selection eval
+        run: python -m evals.tool_selection_eval --golden evals/tool_selection.jsonl
       - name: Run tool_selection gate
         run: python -m evals.tool_selection.run
       - name: Backstop — record runner crash if no result was written
@@ -202,6 +203,22 @@ jobs:
     name: Eval — RAG (FR-025)
     runs-on: ubuntu-latest
     needs: smoke
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: albert
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d albert"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -211,11 +228,19 @@ jobs:
       - name: Sync backend env (for retrieval pytest)
         working-directory: backend
         run: uv sync --locked
+      - name: Run Alembic migrations
+        working-directory: backend
+        run: uv run alembic upgrade head
+      - name: Run isolation evals
+        working-directory: backend
+        run: uv run python -m pytest ../evals/isolation -vv
       - name: Run retrieval/ingestion/isolation unit tests (Owner C handoff)
         working-directory: backend
         run: uv run pytest tests/test_ingestion.py tests/test_retrieval.py tests/test_chunk_isolation.py -v
       - name: Prepare artifact dir
         run: mkdir -p artifacts
+      - name: Run 15-case RAG eval harness
+        run: uv run --project backend python -m evals.rag_eval --golden evals/rag_golden.jsonl --labels evals/rag_judge_labels.jsonl
       # Run from repo root with plain python — evals/rag/run.py is pure stdlib
       # + pyyaml (via evals.common.thresholds). Running under
       # `uv run --directory backend` changed Python CWD to backend/ so the

@@ -83,8 +83,72 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
 
+    # ------------------------------------------------------------------
+    # Dedicated NON-SUPERUSER runtime application role (RLS-enforced).
+    #
+    # The runtime backend MUST connect as this role (DATABASE_URL) so FORCE ROW
+    # LEVEL SECURITY is actually enforced — a superuser / BYPASSRLS login
+    # silently bypasses every tenant policy. Migrations/admin keep using the
+    # superuser login (MIGRATION_DATABASE_URL). The role is NOT a table owner and
+    # is NOT BYPASSRLS, so RLS applies to it without exception.
+    #
+    # Default privileges below auto-grant DML on tables created by *later*
+    # migrations (0003/0004/0006/...), so no per-migration grant bookkeeping is
+    # needed. The dev password is a local placeholder (mirrors postgres:postgres);
+    # rotate it and source from a secret store outside local dev.
+    # ------------------------------------------------------------------
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'albert_app') THEN
+                CREATE ROLE albert_app LOGIN PASSWORD 'albert_app'
+                    NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+            END IF;
+        END
+        $$;
+        """
+    )
+    op.execute(
+        "DO $$ BEGIN "
+        "EXECUTE format('GRANT CONNECT ON DATABASE %I TO albert_app', current_database()); "
+        "END $$;"
+    )
+    op.execute("GRANT USAGE ON SCHEMA public TO albert_app")
+    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO albert_app")
+    op.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO albert_app")
+    # Future tables/sequences created by the migration role auto-grant to albert_app.
+    op.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO albert_app"
+    )
+    op.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        "GRANT USAGE, SELECT ON SEQUENCES TO albert_app"
+    )
+
 
 def downgrade() -> None:
+    # Revoke privileges before dropping the role (DROP ROLE fails while the role
+    # still holds grants or default-privilege entries).
+    op.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        "REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM albert_app"
+    )
+    op.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        "REVOKE USAGE, SELECT ON SEQUENCES FROM albert_app"
+    )
+    op.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM albert_app")
+    op.execute("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM albert_app")
+    op.execute("REVOKE USAGE ON SCHEMA public FROM albert_app")
+    op.execute(
+        "DO $$ BEGIN "
+        "EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM albert_app', current_database()); "
+        "END $$;"
+    )
+    op.execute("DROP ROLE IF EXISTS albert_app")
+
     op.drop_table("audit_logs")
     op.drop_index("ix_tenant_memberships_user_id", table_name="tenant_memberships")
     op.drop_index("ix_tenant_memberships_tenant_id", table_name="tenant_memberships")

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 
@@ -12,6 +11,7 @@ from app.core.security import mint_widget_session_token
 from app.main import app
 from app.schemas.router import RouterDecision
 from app.services.agent import AgentResult
+from app.services.tenant_runtime import TenantRuntimeConfig
 
 client = TestClient(app)
 
@@ -57,8 +57,18 @@ def teardown_function() -> None:
     app.dependency_overrides.clear()
 
 
+class _FakeAgentDb:
+    """Minimal stand-in for the agent-path tenant session (ensure_conversation + commit)."""
+
+    async def execute(self, *args, **kwargs):
+        return None
+
+    async def commit(self):
+        return None
+
+
 async def _null_db_gen(*args, **kwargs):
-    yield None
+    yield _FakeAgentDb()
 
 
 _AGENT_REPLY = "Here is the answer."
@@ -83,6 +93,16 @@ def _patch_chat_pipeline():
     stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_FAQ_DECISION)))
     stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
     stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=AsyncMock(return_value=_MOCK_AGENT_RESULT)))
+    stack.enter_context(
+        _patch(
+            "app.api.routes.widget_chat.load_runtime_config",
+            new=AsyncMock(
+                return_value=TenantRuntimeConfig(
+                    business_name="the business", persona="Albert", tenant_rails=None
+                )
+            ),
+        )
+    )
     return stack
 
 
@@ -143,3 +163,217 @@ def test_chat_message_too_long_returns_422() -> None:
         json={"message": "x" * 5000},
     )
     assert response.status_code == 422
+
+
+def test_chat_passes_tenant_persona_and_business_name_to_agent() -> None:
+    """Phase 6.2B: the agent runs with the tenant's persona/business_name, not defaults."""
+    _wire_widget_session_dep()
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(return_value=None)
+    app.state.redis.setex = AsyncMock()
+    app.state.llm = AsyncMock()
+    app.state.embedder = AsyncMock()
+    app.state.reranker = AsyncMock()
+
+    run_agent_mock = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+    runtime = TenantRuntimeConfig(
+        business_name="Acme Inc", persona="Acme Bot", tenant_rails=None
+    )
+    with ExitStack() as stack:
+        stack.enter_context(_patch("app.api.routes.widget_chat._guardrails_check", new=AsyncMock(return_value=True)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_FAQ_DECISION)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
+        stack.enter_context(_patch("app.api.routes.widget_chat.load_runtime_config", new=AsyncMock(return_value=runtime)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=run_agent_mock))
+        response = client.post(
+            "/api/v1/widget/chat",
+            headers={"Authorization": f"Bearer {_mint_token()}"},
+            json={"message": "Hello"},
+        )
+
+    assert response.status_code == 200, response.text
+    run_agent_mock.assert_awaited_once()
+    kwargs = run_agent_mock.await_args.kwargs
+    assert kwargs["persona"] == "Acme Bot"
+    assert kwargs["business_name"] == "Acme Inc"
+
+
+def test_chat_forwards_tenant_rails_to_guardrails() -> None:
+    """Phase 6.2B: tenant rails are sent to both guardrails (input + output) checks."""
+    _wire_widget_session_dep()
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(return_value=None)
+    app.state.redis.setex = AsyncMock()
+    app.state.llm = AsyncMock()
+    app.state.embedder = AsyncMock()
+    app.state.reranker = AsyncMock()
+
+    rails = {"blocked_topics": ["refunds"]}
+    runtime = TenantRuntimeConfig(business_name="Acme Inc", persona="Acme Bot", tenant_rails=rails)
+    guardrails_mock = AsyncMock(return_value=True)
+    with ExitStack() as stack:
+        stack.enter_context(_patch("app.api.routes.widget_chat._guardrails_check", new=guardrails_mock))
+        stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_FAQ_DECISION)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
+        stack.enter_context(_patch("app.api.routes.widget_chat.load_runtime_config", new=AsyncMock(return_value=runtime)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=AsyncMock(return_value=_MOCK_AGENT_RESULT)))
+        response = client.post(
+            "/api/v1/widget/chat",
+            headers={"Authorization": f"Bearer {_mint_token()}"},
+            json={"message": "Hello"},
+        )
+
+    assert response.status_code == 200, response.text
+    # input check + output check both received the tenant rails.
+    endpoints = [c.args[0] for c in guardrails_mock.await_args_list]
+    assert endpoints == ["input", "output"]
+    for call in guardrails_mock.await_args_list:
+        assert call.args[2] == rails  # tenant_rails forwarded
+
+
+# ---------------------------------------------------------------------------
+# Phase 6.3: classifier-driven cheap workflow paths (no agent for easy cases)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_RUNTIME = TenantRuntimeConfig(business_name="Acme Inc", persona="Acme Bot", tenant_rails=None)
+
+
+def _decision(handler: str, label: str) -> RouterDecision:
+    action = "agent" if handler == "agent" else "direct"
+    routed = {"drop": "router", "agent": "agent"}.get(handler, "workflow")
+    return RouterDecision(action=action, label=label, confidence=0.95, routed_to=routed, handler=handler)
+
+
+def _set_app_state() -> None:
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(return_value=None)
+    app.state.redis.setex = AsyncMock()
+    app.state.llm = AsyncMock()
+    app.state.embedder = AsyncMock()
+    app.state.reranker = AsyncMock()
+
+
+def _post(message: str):
+    return client.post(
+        "/api/v1/widget/chat",
+        headers={"Authorization": f"Bearer {_mint_token()}"},
+        json={"message": message},
+    )
+
+
+def test_spam_handler_drops_without_calling_agent() -> None:
+    _wire_widget_session_dep()
+    _set_app_state()
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    run_agent_mock = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+    with ExitStack() as stack:
+        stack.enter_context(_patch("app.api.routes.widget_chat._guardrails_check", new=AsyncMock(return_value=True)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.load_runtime_config", new=AsyncMock(return_value=_DEFAULT_RUNTIME)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
+        stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_decision("drop", "spam"))))
+        stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=run_agent_mock))
+        response = _post("BUY CHEAP NOW")
+
+    assert response.status_code == 400
+    run_agent_mock.assert_not_awaited()
+
+
+def test_faq_handler_uses_rag_without_agent() -> None:
+    _wire_widget_session_dep()
+    _set_app_state()
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    run_agent_mock = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+    guardrails_mock = AsyncMock(return_value=True)
+    rag_mock = AsyncMock(return_value=[{"chunk_id": "c1", "content": "We are open 9am to 5pm.", "score": 1.0}])
+    with ExitStack() as stack:
+        stack.enter_context(_patch("app.api.routes.widget_chat._guardrails_check", new=guardrails_mock))
+        stack.enter_context(_patch("app.api.routes.widget_chat.load_runtime_config", new=AsyncMock(return_value=_DEFAULT_RUNTIME)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
+        stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_decision("rag", "faq_rag"))))
+        stack.enter_context(_patch("app.services.workflow.rag_search", new=rag_mock))
+        stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=run_agent_mock))
+        response = _post("what are your hours?")
+
+    assert response.status_code == 200, response.text
+    assert "We are open 9am to 5pm." in response.json()["message"]
+    run_agent_mock.assert_not_awaited()
+    # RAG ran with the token's tenant; guardrails wrapped input + output.
+    assert rag_mock.await_args.kwargs["tenant_id"] == str(_TENANT_ID)
+    assert [c.args[0] for c in guardrails_mock.await_args_list] == ["input", "output"]
+
+
+def test_lead_handler_calls_capture_lead_without_agent() -> None:
+    _wire_widget_session_dep()
+    _set_app_state()
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    run_agent_mock = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+    capture_mock = AsyncMock(return_value={"lead_id": "x", "status": "captured"})
+    with ExitStack() as stack:
+        stack.enter_context(_patch("app.api.routes.widget_chat._guardrails_check", new=AsyncMock(return_value=True)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.load_runtime_config", new=AsyncMock(return_value=_DEFAULT_RUNTIME)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
+        stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_decision("lead", "lead_capture"))))
+        stack.enter_context(_patch("app.services.workflow.capture_lead", new=capture_mock))
+        stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=run_agent_mock))
+        response = _post("please have sales email me at buyer@acme.com")
+
+    assert response.status_code == 200, response.text
+    run_agent_mock.assert_not_awaited()
+    capture_mock.assert_awaited_once()
+    assert capture_mock.await_args.kwargs["tenant_id"] == str(_TENANT_ID)
+    assert capture_mock.await_args.kwargs["contact"] == "buyer@acme.com"
+
+
+def test_escalate_handler_calls_escalate_without_agent() -> None:
+    _wire_widget_session_dep()
+    _set_app_state()
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    run_agent_mock = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+    escalate_mock = AsyncMock(return_value={"ticket_id": "c", "status": "escalated"})
+    with ExitStack() as stack:
+        stack.enter_context(_patch("app.api.routes.widget_chat._guardrails_check", new=AsyncMock(return_value=True)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.load_runtime_config", new=AsyncMock(return_value=_DEFAULT_RUNTIME)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
+        stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_decision("escalate", "human_escalate"))))
+        stack.enter_context(_patch("app.services.workflow.escalate", new=escalate_mock))
+        stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=run_agent_mock))
+        response = _post("I want to talk to a human")
+
+    assert response.status_code == 200, response.text
+    run_agent_mock.assert_not_awaited()
+    escalate_mock.assert_awaited_once()
+    assert escalate_mock.await_args.kwargs["tenant_id"] == str(_TENANT_ID)
+
+
+def test_agent_handler_calls_run_agent() -> None:
+    _wire_widget_session_dep()
+    _set_app_state()
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    run_agent_mock = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+    with ExitStack() as stack:
+        stack.enter_context(_patch("app.api.routes.widget_chat._guardrails_check", new=AsyncMock(return_value=True)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.load_runtime_config", new=AsyncMock(return_value=_DEFAULT_RUNTIME)))
+        stack.enter_context(_patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen))
+        stack.enter_context(_patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_decision("agent", "other_agent"))))
+        stack.enter_context(_patch("app.api.routes.widget_chat.run_agent", new=run_agent_mock))
+        response = _post("tell me something interesting")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["message"] == _AGENT_REPLY
+    run_agent_mock.assert_awaited_once()

@@ -38,12 +38,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.tenancy.audit import record_audit
+from app.tenancy.rls import clear_tenant_context, set_tenant_context
 
 logger = logging.getLogger(__name__)
 
 # Tenant-owned tables in dependency order (children before parents where FK matters).
 # Live RAG data is child_chunks -> parent_chunks. Legacy content_chunks is retained
 # below as optional compatibility for databases that still have that table.
+# Widget tables (migration 0004) are tenant-owned too; because erasure UPDATEs the
+# tenants row to 'erased' (never DELETEs it), the FK ondelete=CASCADE never fires, so
+# they must be deleted explicitly here. They have no inter-FK, so order is free.
 _TENANT_TABLES = [
     "cost_events",
     "leads",
@@ -54,6 +58,10 @@ _TENANT_TABLES = [
     "cms_pages",
     "widget_configs",
     "tenant_guardrail_configs",
+    "widget_allowed_origins",
+    "widget_signing_key_versions",
+    "widget_guardrail_configs",
+    "widgets",
 ]
 _OPTIONAL_LEGACY_TABLES = [
     "content_chunks",
@@ -86,19 +94,29 @@ async def erase_tenant(
     # ------------------------------------------------------------------
     # 1. Postgres — delete from all tenant-owned tables
     # ------------------------------------------------------------------
-    for table in _TENANT_TABLES:
-        count = await _delete_tenant_rows(db, table, tenant_id)
-        summary[f"postgres.{table}"] = count
-        logger.info("erasure postgres.%s tenant=%s rows=%d", table, tenant_id, count)
+    # Scope the session to the target tenant for the duration of the deletes.
+    # Tenant-owned tables run FORCE ROW LEVEL SECURITY, so under the production
+    # (non-superuser) DB role a DELETE with no RLS context matches zero rows.
+    # Setting the context makes the policy resolve to exactly this tenant's rows.
+    # This is delete-only scoping: no tenant content is ever SELECTed. Cleared in
+    # finally so the connection never returns to the pool with stale context.
+    await set_tenant_context(db, tenant_id)
+    try:
+        for table in _TENANT_TABLES:
+            count = await _delete_tenant_rows(db, table, tenant_id)
+            summary[f"postgres.{table}"] = count
+            logger.info("erasure postgres.%s tenant=%s rows=%d", table, tenant_id, count)
 
-    for table in _OPTIONAL_LEGACY_TABLES:
-        if not await _table_exists(db, table):
-            summary[f"postgres.{table}"] = 0
-            logger.info("erasure postgres.%s tenant=%s skipped=missing", table, tenant_id)
-            continue
-        count = await _delete_tenant_rows(db, table, tenant_id)
-        summary[f"postgres.{table}"] = count
-        logger.info("erasure postgres.%s tenant=%s rows=%d", table, tenant_id, count)
+        for table in _OPTIONAL_LEGACY_TABLES:
+            if not await _table_exists(db, table):
+                summary[f"postgres.{table}"] = 0
+                logger.info("erasure postgres.%s tenant=%s skipped=missing", table, tenant_id)
+                continue
+            count = await _delete_tenant_rows(db, table, tenant_id)
+            summary[f"postgres.{table}"] = count
+            logger.info("erasure postgres.%s tenant=%s rows=%d", table, tenant_id, count)
+    finally:
+        await clear_tenant_context(db)
 
     # ------------------------------------------------------------------
     # 2. pgvector — live RAG tables are already covered above; log explicitly

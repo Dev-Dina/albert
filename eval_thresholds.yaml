@@ -11,18 +11,28 @@
 # (`evals/common/validate_thresholds.py`) refuses anything lower.
 
 classifier:
-  # DAY 1 PLACEHOLDER — raise when real dataset lands
-  macro_f1_min: 0.60
+  # Production classical classifier measured 0.971762 macro-F1 on the
+  # committed 600-item held-out split; lowest per-class F1 is 0.9500.
+  macro_f1_min: 0.95
 
 rag:
-  # DAY 1 PLACEHOLDER — raise when real dataset lands
-  hit_at_5_min: 0.60
-  # DAY 1 PLACEHOLDER — raise when real dataset lands
-  mrr_min: 0.30
+  # ADR-002 records parent-child chunking + rerank at 0.80 hit@5.
+  hit_at_5_min: 0.80
+  # RAG spec acceptance expects MRR >= 0.50; current 15-case offline gate is 1.00.
+  mrr_min: 0.50
+  # Frozen offline judge rubric (NOT RAGAS / NOT an LLM judge): generated answer
+  # key terms supported by retrieved chunks.
+  faithfulness_min: 0.80
+  # Frozen offline judge rubric: generated answer covers ideal-answer key terms.
+  answer_relevancy_min: 0.80
+  # Agreement between the frozen judge's pass/fail decisions and the committed
+  # hand-labeled subset (evals/rag_judge_labels.jsonl). Only enforced when the
+  # label file is supplied; current agreement is 1.00 on 5 hand-labeled examples.
+  judge_agreement_min: 0.80
 
 agent_tool_selection:
-  # DAY 1 PLACEHOLDER — raise when real dataset lands
-  accuracy_min: 0.70
+  # Memory-router spec success criterion is >= 80% on the 15-case golden set.
+  accuracy_min: 0.80
 
 redteam:
   required_pass_rate: 1.00  # safety floor — DO NOT lower (FR-026)

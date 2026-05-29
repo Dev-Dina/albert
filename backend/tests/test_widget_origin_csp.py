@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
-from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import AsyncMock
 from unittest.mock import patch as _patch
@@ -275,8 +274,15 @@ def test_chat_succeeds_when_origin_still_on_allowlist() -> None:
     allowed_origin_repo.exists_for_tenant = _fake_exists_for_tenant  # type: ignore[assignment]
     deps._fetch_active_key_version = _fake_active_key  # type: ignore[assignment]
 
+    class _FakeAgentDb:
+        async def execute(self, *args, **kwargs):
+            return None
+
+        async def commit(self):
+            return None
+
     async def _null_db_gen(*args, **kwargs):
-        yield None
+        yield _FakeAgentDb()
 
     _mock_agent_result = AgentResult(reply="ok", escalated=False, iterations_used=1)
     _faq_decision = RouterDecision(action="agent", label="faq_rag", confidence=0.9, routed_to="agent")

@@ -175,26 +175,58 @@ balances quality, latency, simplicity, and runtime risk.
 
 ---
 
-## ADR-010: Guardrails Engine
+## ADR-010: NeMo Guardrails sidecar with a deterministic platform-deny prefilter
 
-**Decision**: ship deterministic rules-first platform guardrails for Phase 6.
+**Decision**: the guardrails sidecar runs **NeMo Guardrails + a deterministic
+platform-deny prefilter**. Deterministic platform DENY rules run **first**; NeMo
+Guardrails handles the **configurable tenant topical/conversation rails**; redaction
+remains service-local and separately CI-gated.
 
-**Context**: The project needs always-on platform rails, tenant rails that cannot
-weaken platform protections, and red-team gates with a 1.00 pass-rate threshold.
-The serving container must stay lean.
+> Supersedes the earlier "deterministic rules-first; NeMo declined" decision. The
+> project brief recommends NeMo as the sidecar, so we adopt it — without letting it
+> own every safety control.
 
-**Rationale**:
+**Why NeMo was added**: brief compliance. NeMo is the recommended guardrails sidecar;
+adopting it makes the architecture honestly NeMo-based for topical/conversation policy.
 
-- Deterministic rules are inspectable, cheap, and easy to test locally.
-- They avoid adding NeMo, transformers, or another heavy runtime dependency.
-- They make red-team failures concrete: a probe either triggers the expected
-  category/action or it does not.
-- They keep platform DENY precedence simple and enforceable.
+**Why deterministic DENY rules still run first**:
 
-**Consequence**: Phase 6 blocks common injection, jailbreak, cross-tenant,
-system-prompt extraction, tenant override, tool-abuse, and secret-extraction
-patterns. Phase 7 remains responsible for deeper redaction hardening and broader
-leak-surface coverage.
+- The platform protections (prompt-injection, jailbreak, cross-tenant,
+  system-prompt extraction, tenant-id override, tool-abuse, secret-extraction) are
+  inspectable, cheap, deterministic, and make red-team failures concrete (1.00 gate).
+- Running them first short-circuits before NeMo is consulted, so **tenant/topical
+  rails can only ADD a block — they can never weaken a platform deny** (the
+  tenant-cannot-weaken-platform invariant is structural, not config-dependent).
+
+**Why NeMo runs with no LLM and no embeddings**: the tenant allowed/blocked-topic
+policy is enforced by a registered custom Python action (`check_topic_policy`,
+deterministic, shared with the fallback matcher in `app/topic_policy.py`). NeMo's
+rails engine executes the policy; `models: []` and no embedding provider mean **no
+paid LLM calls and no runtime model downloads** in CI.
+
+**Why redaction stays separate**: redaction (`app/redaction.py`) runs last, before
+returning/logging, and has its own CI gate (`evals/redaction/run.py`, 1.00). It is
+not delegated to NeMo, so PII/secret leakage is verified independently.
+
+**Why NeMo is isolated to the guardrails service**: NeMo's dependency tree
+(onnxruntime, fastembed, annoy, pandas) is heavy. It is added **only** to the
+guardrails sidecar — never to the backend or modelserver, which stay lean. The
+modelserver retains **no torch/transformers** (serving = sklearn + joblib).
+
+**Footprint / size exception**: adding NeMo grows the guardrails image from **373 MB
+to 782 MB** (multi-stage build: `g++` only in the builder to compile `annoy`, which
+has no cp312 wheel; the runtime ships no compiler). 782 MB exceeds the brief's
+<500 MB lean ideal but is within the agreed 800 MB ceiling for this sidecar; it is a
+**justified guardrails-sidecar exception** for NeMo compliance, kept because the
+red-team, redaction, smoke, and service-auth gates all pass.
+
+**Availability**: in CI/production (`GUARDRAILS_REQUIRE_NEMO=1`, set in the image) a
+NeMo load failure **fails loud** — we never silently degrade to deterministic-only
+while claiming NeMo. Local dev may fall back gracefully to the deterministic matcher.
+
+**Consequence**: blocks the same platform categories as before (unchanged red-team
+behavior) plus NeMo-executed tenant topical policy. Phase 7 remains responsible for
+deeper redaction hardening and broader leak-surface coverage.
 
 ---
 
@@ -277,3 +309,37 @@ tenant-payload store.
 `_erase_traces` is a documented no-op (`summary["traces"] = 0`). If a persistent
 trace store holding tenant payloads is ever introduced, it MUST implement tenant
 purge and this ADR must be revisited.
+
+---
+
+## ADR-014: Classifier-Driven Cheap Path + Routed-Off-Agent Metric
+
+**Decision**: the router maps each classifier label to a deterministic cheap-path
+handler that runs WITHOUT the bounded LLM agent; only ambiguous/open-ended turns
+reach the agent.
+
+| Label | Handler | Behaviour (no LLM agent) |
+|---|---|---|
+| `spam` | drop | rejected before any work |
+| `faq_rag` | rag | extractive answer from the tenant's RAG corpus |
+| `lead_capture` | lead | `capture_lead` when a contact is present in the message |
+| `human_escalate` | escalate | flag the conversation for human handoff |
+| `other_agent` / ambiguous / low-confidence / classifier error | agent | bounded tool-calling agent |
+
+**Fallback**: a cheap path that can't complete (no retrieval hit; no extractable
+contact) returns `reply=None` and the route falls back to the agent — logged.
+
+**Cost story** (deterministic report `evals/router_cost.py` over the committed
+`evals/routing_golden.jsonl`, 15 turns):
+
+- routed off-agent: **12/15 = 80.0%** (drop 13.3%, rag 40.0%, lead 13.3%, escalate 13.3%)
+- agent-handled: **3/15 = 20.0%**
+- estimated cost saved: **$0.0240** — **ESTIMATE ONLY**, assuming **$0.0020 per
+  bounded agent turn avoided** (several LLM calls/turn). This is a documented
+  assumption, not a measured bill; replace with real telemetry when available.
+
+**Assumptions / caveats**: the golden set reflects expected classifier labels at
+high confidence; the per-turn agent cost is an estimate; embedding cost on the
+RAG cheap path is still recorded by `cost_events` (only the LLM agent loop is
+avoided). Guardrails input/output checks and tenant persona/rails injection wrap
+every path; tenant scoping (RAG, capture_lead, escalate) is unchanged.

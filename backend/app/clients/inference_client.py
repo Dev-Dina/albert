@@ -1,9 +1,11 @@
 """Internal client helpers for calling Owner C services (modelserver, guardrails).
 
-Phase 1 scope: provide the service-auth header and thin POST wrappers that attach
-it. This module is **helper-only** — it is intentionally NOT wired into any route,
-router, or agent yet. The service credential comes from
-``settings.service_auth_token`` and is never logged.
+Provides the service-auth header and thin POST wrappers that attach it, and is
+the single source of truth for the correct Owner C routes (modelserver
+``/predict``; guardrails ``/check-input`` + ``/check-output``). The chat routes
+call the guardrails helpers here so the route names cannot drift per call site.
+The service credential comes from ``settings.service_auth_token`` and is never
+logged.
 """
 
 from typing import Any
