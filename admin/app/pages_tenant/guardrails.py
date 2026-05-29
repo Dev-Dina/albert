@@ -1,10 +1,9 @@
 """Guardrails page — view + edit tenant guardrail config (floor-enforced).
 
-The admin can strengthen any setting (e.g. add to ``block_topics``, raise
-``injection_defenses.level`` from ``balanced`` to ``strict``) but never
-weaken below the platform floor. A floor violation returns HTTP 422 with
-``{key_path, attempted_value, floor_value}`` — we render that inline so
-the admin sees exactly which key broke the floor.
+Migrated from ``pages/3_Guardrails.py`` to the ``st.navigation`` model. The
+admin can strengthen any setting but never weaken below the platform floor; a
+floor violation returns HTTP 422 with ``{key_path, attempted_value,
+floor_value}`` and is rendered inline via ``FloorViolationError`` (SC-010).
 """
 
 from __future__ import annotations
@@ -16,11 +15,11 @@ import streamlit as st
 from app.clients.backend_client import (
     BackendClient,
     BackendError,
-    BackendUnauthorizedError,
     FloorViolationError,
 )
-from app.lib.auth import clear_session, render_sidebar_account, require_session
-from app.lib.theme import apply_page_chrome, callout, section
+from app.lib import ui
+from app.lib.auth import handle_backend_error, page_session
+from app.lib.theme import callout, section
 
 
 _HELP_TEXT = (
@@ -33,33 +32,30 @@ _HELP_TEXT = (
 
 
 def main() -> None:
-    apply_page_chrome("Guardrails", icon="🧱")
-    client = BackendClient()
-    session = require_session(client)
-    client.token = session.token
-    render_sidebar_account(session)
+    session = page_session()
+    client = BackendClient(token=session.token)
 
     st.markdown("<h1>Guardrails</h1>", unsafe_allow_html=True)
-    st.markdown(
-        f'<p class="albert-meta">{_HELP_TEXT}</p>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<p class="albert-meta">{_HELP_TEXT}</p>', unsafe_allow_html=True)
+
+    slot = st.empty()
+    with slot.container():
+        ui.loading_skeleton(3)
 
     try:
         current = client.get_guardrail_config()
-    except BackendUnauthorizedError:
-        clear_session()
-        st.rerun()
-        return
     except BackendError as exc:
-        callout(f"Could not load guardrail config: {exc}", level="danger")
+        slot.empty()
+        if handle_backend_error(exc):
+            return
+        if ui.error_state(f"Could not load guardrail config: {exc}", key="guardrails-retry"):
+            st.rerun()
         return
 
+    slot.empty()
+
     section("Current config")
-    st.code(
-        json.dumps(current, indent=2) if current else "{}",
-        language="json",
-    )
+    st.code(json.dumps(current, indent=2) if current else "{}", language="json")
 
     section("Update config")
     with st.form("guardrail-edit", clear_on_submit=False):
@@ -94,11 +90,9 @@ def main() -> None:
             level="danger",
         )
         return
-    except BackendUnauthorizedError:
-        clear_session()
-        st.rerun()
-        return
     except BackendError as exc:
+        if handle_backend_error(exc):
+            return
         callout(f"Could not save config: {exc}", level="danger")
         return
 

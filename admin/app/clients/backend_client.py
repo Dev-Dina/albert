@@ -60,6 +60,25 @@ class FloorViolationError(BackendError):
 
 
 @dataclass(frozen=True)
+class Identity:
+    """Verified identity from ``GET /auth/me`` (FR-050 exception 2).
+
+    ``role`` is whatever the backend returns (``tenant_manager`` /
+    ``tenant_admin`` / ``member`` / ``None``); the admin app maps anything
+    that is not a manager/admin to the ``other`` surface in ``lib/auth.py``.
+    ``tenant_id`` / ``tenant_name`` are populated only for tenant-scoped
+    callers. The JWT is NEVER decoded locally — identity comes from this call.
+    """
+
+    user_id: str
+    email: str
+    role: str
+    is_active: bool
+    tenant_id: str | None
+    tenant_name: str | None
+
+
+@dataclass(frozen=True)
 class AdminWidget:
     id: str
     public_widget_id: str
@@ -85,6 +104,83 @@ class EmbedSnippet:
 @dataclass(frozen=True)
 class SigningKeyMeta:
     version: int
+    created_at: str
+
+
+# --- Platform (tenant_manager) view models ---------------------------------
+
+
+@dataclass(frozen=True)
+class TenantSummary:
+    tenant_id: str
+    name: str
+    slug: str
+    status: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class CreatedTenant:
+    tenant_id: str
+    name: str
+    slug: str
+    status: str
+    first_admin_user_id: str
+
+
+@dataclass(frozen=True)
+class TenantCost:
+    tenant_id: str
+    total_events: int
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_usd: str
+
+
+@dataclass(frozen=True)
+class CostPoint:
+    date: str
+    cost_usd: str
+    total_tokens: int
+
+
+@dataclass(frozen=True)
+class AuditEntry:
+    entry_id: str
+    actor_user_id: str | None
+    actor_email: str | None
+    action: str
+    target_tenant_id: str | None
+    target_tenant_slug: str | None
+    created_at: str
+    meta: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class CreatedManager:
+    manager_user_id: str
+    email: str
+
+
+# --- Tenant-admin view models ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class LeadRow:
+    lead_id: str
+    name: str
+    contact: str
+    intent: str
+    status: str
+    created_at: str
+    conversation_id: str | None
+
+
+@dataclass(frozen=True)
+class MemberRow:
+    user_id: str
+    email: str
     created_at: str
 
 
@@ -152,16 +248,29 @@ class BackendClient:
         self.token = token
         return token
 
-    def me(self) -> dict[str, Any]:
-        """Return the authenticated identity (id, email, role, is_active).
+    def auth_me(self) -> Identity:
+        """Resolve the signed-in user's verified identity.
 
-        ``role`` is the platform role: ``"tenant_manager"`` for platform managers,
-        ``null`` for tenant admins/members (whose role lives in tenant_memberships).
+        Maps onto the extended ``GET /auth/me`` (FR-050 exception 2). Does NOT
+        decode the JWT locally — role + tenant come straight from the backend.
+        401 raises :class:`BackendUnauthorizedError` so the caller clears the
+        local session; 5xx / network errors propagate as :class:`BackendError`
+        for a retryable error state.
         """
         with self._client() as c:
             r = c.get("/auth/me", headers=self._headers())
         self._raise_for_status(r)
-        return r.json()
+        body = r.json()
+        raw_tenant_id = body.get("tenant_id")
+        raw_tenant_name = body.get("tenant_name")
+        return Identity(
+            user_id=str(body.get("id", "")),
+            email=str(body.get("email", "")),
+            role=str(body.get("role") or "other"),
+            is_active=bool(body.get("is_active", False)),
+            tenant_id=str(raw_tenant_id) if raw_tenant_id else None,
+            tenant_name=str(raw_tenant_name) if raw_tenant_name else None,
+        )
 
     # -- widgets -----------------------------------------------------------
 
@@ -314,6 +423,253 @@ class BackendClient:
         return SigningKeyMeta(
             version=int(body["version"]), created_at=str(body["created_at"])
         )
+
+    # -- platform (tenant_manager) ----------------------------------------
+    #
+    # These hit the manager router (mounted at ``/tenants``). The manager
+    # legitimately targets tenants by id (path param) — that is the lifecycle
+    # power of the role. The "never send a client-supplied tenant_id as scope"
+    # rule (FR-031) applies to the tenant_admin self-scope, not here.
+
+    def list_tenants(self, *, limit: int = 200, offset: int = 0) -> list[TenantSummary]:
+        with self._client() as c:
+            r = c.get(
+                "/tenants",
+                params={"limit": limit, "offset": offset},
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return [_tenant_from_json(item) for item in r.json()]
+
+    def get_tenant(self, tenant_id: str) -> TenantSummary:
+        with self._client() as c:
+            r = c.get(f"/tenants/{tenant_id}", headers=self._headers())
+        self._raise_for_status(r)
+        return _tenant_from_json(r.json())
+
+    def create_tenant(
+        self, *, name: str, first_admin_email: str, first_admin_password: str
+    ) -> CreatedTenant:
+        with self._client() as c:
+            r = c.post(
+                "/tenants",
+                headers=self._headers(),
+                json={
+                    "name": name,
+                    "first_admin_email": first_admin_email,
+                    "first_admin_password": first_admin_password,
+                },
+            )
+        self._raise_for_status(r)
+        data = r.json()
+        return CreatedTenant(
+            tenant_id=str(data["tenant_id"]),
+            name=data["name"],
+            slug=data["slug"],
+            status=data["status"],
+            first_admin_user_id=str(data["first_admin_user_id"]),
+        )
+
+    def suspend_tenant(self, tenant_id: str) -> str:
+        with self._client() as c:
+            r = c.post(f"/tenants/{tenant_id}/suspend", headers=self._headers())
+        self._raise_for_status(r)
+        return str(r.json()["status"])
+
+    def reactivate_tenant(self, tenant_id: str) -> str:
+        with self._client() as c:
+            r = c.post(f"/tenants/{tenant_id}/reactivate", headers=self._headers())
+        self._raise_for_status(r)
+        return str(r.json()["status"])
+
+    def erase_tenant(self, tenant_id: str) -> dict[str, Any]:
+        with self._client() as c:
+            r = c.delete(f"/tenants/{tenant_id}", headers=self._headers())
+        self._raise_for_status(r)
+        return r.json().get("summary") or {}
+
+    def get_tenant_cost(
+        self, tenant_id: str, *, since: str | None = None, until: str | None = None
+    ) -> TenantCost:
+        with self._client() as c:
+            r = c.get(
+                f"/tenants/{tenant_id}/cost",
+                params=_drop_none({"since": since, "until": until}),
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return _tenant_cost_from_json(r.json())
+
+    def get_cost_all(
+        self, *, since: str | None = None, until: str | None = None
+    ) -> list[TenantCost]:
+        with self._client() as c:
+            r = c.get(
+                "/tenants/cost/all",
+                params=_drop_none({"since": since, "until": until}),
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return [_tenant_cost_from_json(item) for item in r.json()]
+
+    def get_cost_series(
+        self, *, since: str | None = None, until: str | None = None
+    ) -> dict[str, list[CostPoint]]:
+        """Batched daily series for ALL tenants, keyed by tenant_id (FR-015).
+
+        One call — never one per row — so the Cost Overview has no N+1 fan-out.
+        """
+        with self._client() as c:
+            r = c.get(
+                "/tenants/cost/series",
+                params=_drop_none(
+                    {"since": since, "until": until, "granularity": "daily"}
+                ),
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        series: dict[str, list[CostPoint]] = {}
+        for item in r.json():
+            series[str(item["tenant_id"])] = [
+                CostPoint(
+                    date=bucket["date"],
+                    cost_usd=bucket["cost_usd"],
+                    total_tokens=int(bucket["total_tokens"]),
+                )
+                for bucket in item.get("buckets", [])
+            ]
+        return series
+
+    def list_audit(
+        self, *, limit: int = 50, before_id: str | None = None
+    ) -> list[AuditEntry]:
+        with self._client() as c:
+            r = c.get(
+                "/tenants/audit",
+                params=_drop_none({"limit": limit, "before_id": before_id}),
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return [_audit_from_json(item) for item in r.json()]
+
+    def create_manager(self, *, email: str, password: str) -> CreatedManager:
+        with self._client() as c:
+            r = c.post(
+                "/tenants/managers",
+                headers=self._headers(),
+                json={"email": email, "password": password},
+            )
+        self._raise_for_status(r)
+        data = r.json()
+        return CreatedManager(
+            manager_user_id=str(data["manager_user_id"]), email=data["email"]
+        )
+
+    # -- tenant-admin: leads + members -------------------------------------
+    #
+    # These hit the tenant-admin router (``/api/v1/admin``). The backend
+    # derives ``tenant_id`` from the verified JWT, so NONE of these methods
+    # accept a ``tenant_id`` argument — the typed signatures enforce FR-031.
+
+    def list_leads(
+        self,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[LeadRow]:
+        with self._client() as c:
+            r = c.get(
+                "/api/v1/admin/leads",
+                params=_drop_none(
+                    {"since": since, "until": until, "status": status, "limit": limit}
+                ),
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return [_lead_from_json(item) for item in r.json()]
+
+    def list_members(self) -> list[MemberRow]:
+        with self._client() as c:
+            r = c.get("/api/v1/admin/members", headers=self._headers())
+        self._raise_for_status(r)
+        return [_member_from_json(item) for item in r.json()]
+
+    def invite_member(self, *, email: str, password: str) -> MemberRow:
+        with self._client() as c:
+            r = c.post(
+                "/api/v1/admin/members",
+                headers=self._headers(),
+                json={"email": email, "password": password},
+            )
+        self._raise_for_status(r)
+        return _member_from_json(r.json())
+
+    def remove_member(self, user_id: str) -> None:
+        with self._client() as c:
+            r = c.delete(
+                f"/api/v1/admin/members/{user_id}", headers=self._headers()
+            )
+        self._raise_for_status(r)
+
+
+def _drop_none(params: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in params.items() if v is not None}
+
+
+def _tenant_from_json(item: dict[str, Any]) -> TenantSummary:
+    return TenantSummary(
+        tenant_id=str(item["tenant_id"]),
+        name=item["name"],
+        slug=item["slug"],
+        status=item["status"],
+        created_at=str(item.get("created_at") or ""),
+        updated_at=str(item.get("updated_at") or ""),
+    )
+
+
+def _tenant_cost_from_json(item: dict[str, Any]) -> TenantCost:
+    return TenantCost(
+        tenant_id=str(item["tenant_id"]),
+        total_events=int(item.get("total_events") or 0),
+        total_input_tokens=int(item.get("total_input_tokens") or 0),
+        total_output_tokens=int(item.get("total_output_tokens") or 0),
+        total_cost_usd=str(item.get("total_cost_usd") or "0"),
+    )
+
+
+def _audit_from_json(item: dict[str, Any]) -> AuditEntry:
+    return AuditEntry(
+        entry_id=str(item["entry_id"]),
+        actor_user_id=str(item["actor_user_id"]) if item.get("actor_user_id") else None,
+        actor_email=item.get("actor_email"),
+        action=item["action"],
+        target_tenant_id=str(item["target_tenant_id"]) if item.get("target_tenant_id") else None,
+        target_tenant_slug=item.get("target_tenant_slug"),
+        created_at=str(item["created_at"]),
+        meta=item.get("meta") or {},
+    )
+
+
+def _lead_from_json(item: dict[str, Any]) -> LeadRow:
+    return LeadRow(
+        lead_id=str(item["id"]),
+        name=item.get("name") or "",
+        contact=item.get("contact") or "",
+        intent=item.get("intent") or "",
+        status=item.get("status") or "new",
+        created_at=str(item.get("created_at") or ""),
+        conversation_id=str(item["conversation_id"]) if item.get("conversation_id") else None,
+    )
+
+
+def _member_from_json(item: dict[str, Any]) -> MemberRow:
+    return MemberRow(
+        user_id=str(item["user_id"]),
+        email=item.get("email") or "",
+        created_at=str(item.get("created_at") or ""),
+    )
 
 
 def _widget_from_json(item: dict[str, Any]) -> AdminWidget:

@@ -18,9 +18,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.fastapi_users import UserManager, auth_backend, current_active_user, get_user_manager
-from app.db.models.user import User
+from app.auth.fastapi_users import UserManager, auth_backend, get_user_manager
+from app.auth.roles import CurrentUserDep
+from app.db.models.tenant import Tenant
+from app.db.session import get_db
 from app.ratelimit import check_auth_rate_limit
 from app.schemas.auth import CurrentUserResponse, LoginRequest, TokenResponse
 
@@ -55,12 +59,28 @@ async def login(
 
 @router.get("/me", response_model=CurrentUserResponse)
 async def me(
-    current_user: Annotated[User, Depends(current_active_user)],
+    current: CurrentUserDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CurrentUserResponse:
-    """Return the authenticated user's identity. 401 without a valid Bearer token."""
+    """Return the authenticated user's resolved identity.
+
+    Role + tenant are resolved server-side from the DB (``platform_role`` for
+    managers, ``tenant_memberships`` for admins/members) — never from the token.
+    ``tenant_id`` / ``tenant_name`` are populated for tenant-scoped callers and
+    are ``null`` for ``tenant_manager`` (FR-050 exception 2). 401 without a
+    valid Bearer token; 403 if the user has no role assigned.
+    """
+    tenant_name: str | None = None
+    if current.tenant_id is not None:
+        result = await db.execute(
+            select(Tenant.name).where(Tenant.id == current.tenant_id)
+        )
+        tenant_name = result.scalar_one_or_none()
     return CurrentUserResponse(
-        id=str(current_user.id),
-        email=current_user.email,
-        role=current_user.platform_role,
-        is_active=current_user.is_active,
+        id=str(current.user_id),
+        email=current.email,
+        role=current.role.value,
+        is_active=True,
+        tenant_id=current.tenant_id,
+        tenant_name=tenant_name,
     )

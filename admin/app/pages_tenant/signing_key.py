@@ -1,44 +1,67 @@
-"""Signing key page — view current version + rotate-only action.
+"""Signing Key page — view current version + rotate-only action.
 
-Rotation invalidates every outstanding session token for this tenant in one
-action. We gate the rotate button behind a two-step confirmation so admins
-can't trigger it accidentally — the confirmation banner spells out the
-consequence in plain English.
+Migrated from ``pages/5_Signing_Key.py`` to the ``st.navigation`` model and
+extended with an explicit state indicator (FR-022, US2 scenario 3). The state
+is derived from the response shape rather than inferred from absence:
 
-The current key version is fetched from the backend on every render so the
-panel always reflects the live state (not just rotations done in this
-Streamlit session).
+* a key version present  → ``active``
+* a key with ``rotated_at`` set (future field) → ``rotated``
+* a key not yet promoted (future ``pending`` field) → ``pending``
+* no key at all → ``none`` (rotate to mint v1)
+
+The v1 backend endpoint returns only the active key's ``{version, created_at}``,
+so today the live states are ``active`` / ``none``; the helper already maps the
+richer states so a future response shape needs no page change.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import streamlit as st
 
 from app.clients.backend_client import (
     BackendClient,
     BackendError,
-    BackendUnauthorizedError,
+    SigningKeyMeta,
 )
-from app.lib.auth import clear_session, render_sidebar_account, require_session
-from app.lib.theme import COLORS, apply_page_chrome, callout, section
+from app.lib import ui
+from app.lib.auth import handle_backend_error, page_session
+from app.lib.theme import COLORS, callout, section, status_badge
 
 
 _CONFIRM_KEY = "albert.rotate_confirm"
 _LAST_FLASH_KEY = "albert.rotate_flash"
 
 
+def signing_key_state(meta: SigningKeyMeta | None) -> str:
+    """Derive an explicit lifecycle state from the response fields (FR-022)."""
+    if meta is None:
+        return "none"
+    if getattr(meta, "rotated_at", None):
+        return "rotated"
+    if getattr(meta, "pending", False):
+        return "pending"
+    return "active"
+
+
 def _render_current(client: BackendClient) -> None:
     try:
         meta = client.get_signing_key()
-    except BackendUnauthorizedError:
-        clear_session()
-        st.rerun()
-        return
     except BackendError as exc:
-        callout(f"Could not load current key metadata: {exc}", level="danger")
+        if handle_backend_error(exc):
+            return
+        if ui.error_state(f"Could not load current key metadata: {exc}", key="key-retry"):
+            st.rerun()
         return
 
     section("Current signing key")
+    state = signing_key_state(meta)
+    st.markdown(
+        f'<div style="margin-bottom:0.5rem;">State: {status_badge(state)}</div>',
+        unsafe_allow_html=True,
+    )
+
     if meta is None:
         callout(
             "No active signing key for this tenant yet. Rotate below to mint v1.",
@@ -46,10 +69,6 @@ def _render_current(client: BackendClient) -> None:
         )
         return
 
-    # Open the bento card, then use Streamlit columns for the two-column
-    # layout (more reliable than a flexbox inside a single markdown call —
-    # Streamlit's sanitiser sometimes drops sibling divs after a colored
-    # span). Close the card after the columns render.
     st.markdown('<div class="albert-section">', unsafe_allow_html=True)
     col_v, col_t = st.columns([1, 2], gap="large")
     with col_v:
@@ -104,28 +123,22 @@ def _render_rotate(client: BackendClient) -> None:
         if st.button("Yes, rotate now", type="primary"):
             try:
                 meta = client.rotate_signing_key()
-            except BackendUnauthorizedError:
-                clear_session()
-                st.rerun()
-                return
             except BackendError as exc:
+                if handle_backend_error(exc):
+                    return
                 callout(f"Rotation failed: {exc}", level="danger")
                 st.session_state[_CONFIRM_KEY] = False
                 return
             st.session_state[_CONFIRM_KEY] = False
             st.session_state[_LAST_FLASH_KEY] = (
-                f"Rotated to version v{meta.version} "
-                f"(created at {meta.created_at})."
+                f"Rotated to version v{meta.version} (created at {meta.created_at})."
             )
             st.rerun()
 
 
 def main() -> None:
-    apply_page_chrome("Signing key", icon="🔑")
-    client = BackendClient()
-    session = require_session(client)
-    client.token = session.token
-    render_sidebar_account(session)
+    session = page_session()
+    client = BackendClient(token=session.token)
 
     st.markdown("<h1>Signing key</h1>", unsafe_allow_html=True)
     st.markdown(

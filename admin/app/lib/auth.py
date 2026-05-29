@@ -11,17 +11,30 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Literal
 
 import streamlit as st
 
-from app.clients.backend_client import BackendClient, BackendError
+from app.clients.backend_client import (
+    BackendClient,
+    BackendError,
+    BackendUnauthorizedError,
+)
 from app.lib.theme import callout
 
 
 _TOKEN_KEY = "albert.token"
 _TOKEN_EXP_KEY = "albert.token_exp"
 _EMAIL_KEY = "albert.email"
-_ROLE_KEY = "albert.platform_role"
+
+# Cached identity (role + tenant) keyed by the token it was resolved for, so a
+# signed-in user is probed once per token rather than on every Streamlit rerun.
+_ROLE_KEY = "albert.role"
+_TENANT_ID_KEY = "albert.tenant_id"
+_TENANT_NAME_KEY = "albert.tenant_name"
+_IDENTITY_TOKEN_KEY = "albert.identity_token"
+
+Role = Literal["tenant_manager", "tenant_admin", "other"]
 
 
 @dataclass(frozen=True)
@@ -29,6 +42,29 @@ class Session:
     token: str
     email: str
     expires_at: float
+    role: Role = "other"
+    tenant_id: str | None = None
+    tenant_name: str | None = None
+
+    def __post_init__(self) -> None:
+        """Enforce the role/tenant invariant (data-model.md).
+
+        ``tenant_manager`` → ``tenant_id``/``tenant_name`` MUST be ``None``.
+        ``tenant_admin`` → ``tenant_id`` MUST be present, else the session is
+        invalid and degrades to ``other`` (renders the wrong-role view).
+        Anything else (``member`` / unknown) is ``other`` with no tenant.
+        """
+        if self.role == "tenant_manager":
+            object.__setattr__(self, "tenant_id", None)
+            object.__setattr__(self, "tenant_name", None)
+        elif self.role == "tenant_admin":
+            if not self.tenant_id:
+                object.__setattr__(self, "role", "other")
+                object.__setattr__(self, "tenant_name", None)
+        else:
+            object.__setattr__(self, "role", "other")
+            object.__setattr__(self, "tenant_id", None)
+            object.__setattr__(self, "tenant_name", None)
 
 
 def current_session() -> Session | None:
@@ -54,38 +90,163 @@ def store_session(token: str, *, email: str, ttl_seconds: int = 3600) -> None:
 
 
 def clear_session() -> None:
-    for key in (_TOKEN_KEY, _TOKEN_EXP_KEY, _EMAIL_KEY, _ROLE_KEY):
+    for key in (
+        _TOKEN_KEY,
+        _TOKEN_EXP_KEY,
+        _EMAIL_KEY,
+        _ROLE_KEY,
+        _TENANT_ID_KEY,
+        _TENANT_NAME_KEY,
+        _IDENTITY_TOKEN_KEY,
+    ):
         st.session_state.pop(key, None)
 
 
-def _block_platform_managers(client: BackendClient) -> None:
-    """Stop rendering with a clear notice if the signed-in user is a platform
-    manager. This console manages a single tenant's widgets/origins/config —
-    a ``tenant_manager`` has no tenant membership and would only hit 403s here.
-    The platform role is resolved from ``/auth/me`` (cached per session)."""
-    role = st.session_state.get(_ROLE_KEY)
-    if role is None:
-        try:
-            role = client.me().get("role") or ""
-        except BackendError:
-            # Don't hard-block on a transient error — feature pages will surface
-            # the real backend error if one persists.
-            return
-        st.session_state[_ROLE_KEY] = role
-    if role == "tenant_manager":
-        callout(
-            "You're signed in as a <strong>platform manager</strong>. This console "
-            "manages a single tenant's widgets, origins, and guardrails — managers "
-            "operate at the platform level (provision/suspend/erase tenants, aggregate "
-            "usage) and intentionally cannot access tenant content here. "
-            "Sign in as a tenant admin (e.g. <code>admin-acme@example.com</code>) to "
-            "manage Acme's widgets.",
-            level="warning",
+def resolve_identity(client: BackendClient) -> Session | None:
+    """Probe ``GET /auth/me`` and return the role-aware :class:`Session`.
+
+    Returns ``None`` when there is no (valid) token — the caller renders the
+    login form. The verified role + tenant come from the backend; the JWT is
+    never decoded locally (FR-001, admin_session_contract.md). The identity is
+    cached in ``st.session_state`` keyed by the current token so we probe once
+    per token, not on every rerun.
+
+    Failure modes (admin_session_contract.md): 401 →
+    :class:`BackendUnauthorizedError` is caught here, the session is cleared,
+    and ``None`` is returned (login form). 5xx / network errors propagate as
+    :class:`BackendError` for the caller's retryable error state.
+    """
+    base = current_session()
+    if base is None:
+        return None
+
+    if st.session_state.get(_IDENTITY_TOKEN_KEY) == base.token:
+        return _session_with_identity(
+            base,
+            role=st.session_state.get(_ROLE_KEY, "other"),
+            tenant_id=st.session_state.get(_TENANT_ID_KEY),
+            tenant_name=st.session_state.get(_TENANT_NAME_KEY),
         )
-        if st.button("Sign out", key="albert-mgr-signout"):
-            clear_session()
-            st.rerun()
-        st.stop()
+
+    try:
+        identity = client.auth_me()
+    except BackendUnauthorizedError:
+        clear_session()
+        return None
+
+    st.session_state[_ROLE_KEY] = identity.role
+    st.session_state[_TENANT_ID_KEY] = identity.tenant_id
+    st.session_state[_TENANT_NAME_KEY] = identity.tenant_name
+    st.session_state[_IDENTITY_TOKEN_KEY] = base.token
+    return _session_with_identity(
+        base,
+        role=identity.role,
+        tenant_id=identity.tenant_id,
+        tenant_name=identity.tenant_name,
+    )
+
+
+def _session_with_identity(
+    base: Session,
+    *,
+    role: str,
+    tenant_id: str | None,
+    tenant_name: str | None,
+) -> Session:
+    # Session.__post_init__ normalizes any non-manager/admin role to "other".
+    normalized_role: Role = role if role in ("tenant_manager", "tenant_admin") else "other"
+    return Session(
+        token=base.token,
+        email=base.email,
+        expires_at=base.expires_at,
+        role=normalized_role,
+        tenant_id=tenant_id,
+        tenant_name=tenant_name,
+    )
+
+
+def page_session() -> Session:
+    """Top-of-page guard for role pages run via ``st.navigation``.
+
+    ``main.py`` has already verified identity before routing here; this re-reads
+    the in-memory session so a page can build an authed client. If the session
+    expired between reruns, stop and let the next rerun fall back to login.
+    """
+    session = current_session()
+    if session is None:
+        st.warning("Your session expired. Reloading the sign-in screen…")
+        st.rerun()
+    return session  # type: ignore[return-value]
+
+
+# Markers that a tenant-scoped response signals the tenant is no longer active
+# (suspended/erased after sign-in). Matched against the backend error message
+# for the statuses a status-aware endpoint would use.
+_TENANT_INACTIVE_MARKERS = ("suspend", "eras", "inactive", "not active")
+
+
+def _is_tenant_inactive(exc: BackendError) -> bool:
+    if isinstance(exc, BackendUnauthorizedError):
+        return False
+    message = (exc.message or "").lower()
+    return exc.status_code in (403, 409, 423) and any(
+        marker in message for marker in _TENANT_INACTIVE_MARKERS
+    )
+
+
+def render_tenant_inactive_banner() -> None:
+    """Designed banner for the 'tenant suspended/erased after sign-in' edge case.
+
+    Explicit, not a blank page (spec edge cases): explains the state and offers
+    a sign-out. No tenant data is loaded behind it.
+    """
+    callout(
+        "This tenant is no longer active. It was suspended or erased by the "
+        "platform after you signed in, so its admin surface is unavailable. "
+        "This mirrors the backend's access boundary — no tenant data is loaded.",
+        level="danger",
+    )
+    if st.button("Sign out", key="albert-tenant-inactive-signout", type="primary"):
+        clear_session()
+        st.rerun()
+
+
+def handle_backend_error(exc: BackendError) -> bool:
+    """Centralized backend-error handling for pages (data-model cross-cutting).
+
+    On 401 (expired/invalid token) clears the session and reruns so the app
+    falls back to the login form, and returns True (handled). When a response
+    signals the tenant is no longer active (suspended/erased after sign-in),
+    renders the designed inactive banner and returns True. For any other error
+    returns False so the caller can render its own retryable error state.
+    """
+    if isinstance(exc, BackendUnauthorizedError):
+        clear_session()
+        st.rerun()
+        return True
+    if _is_tenant_inactive(exc):
+        render_tenant_inactive_banner()
+        return True
+    return False
+
+
+def render_wrong_role_view(session: Session) -> None:
+    """Render the static wrong-role / unknown-role view (FR-004, FR-005).
+
+    Mirrors the backend's 403 boundary: a fixed client-side explanation plus a
+    sign-out control only. Makes NO backend call and offers no auto-redirect.
+    """
+    st.markdown("<h1>This account has no admin surface</h1>", unsafe_allow_html=True)
+    callout(
+        "Your account is signed in, but it is not a platform manager or a "
+        "tenant admin, so there is nothing to administer here. This mirrors "
+        "the backend's access boundary — no tenant or platform data is loaded. "
+        "If you believe this is an error, contact your administrator.",
+        level="info",
+    )
+    if st.button("Sign out", key="albert-wrong-role-signout", type="primary"):
+        clear_session()
+        st.rerun()
 
 
 def login_form(client: BackendClient) -> Session | None:
@@ -127,17 +288,11 @@ def login_form(client: BackendClient) -> Session | None:
 
 
 def require_session(client: BackendClient) -> Session:
-    """Top-of-page guard: render the login form if not signed in, else return.
-
-    Also binds the token to ``client`` and blocks platform managers with a clear
-    notice (this is a tenant-admin console), so every page has one chokepoint.
-    """
+    """Top-of-page guard: render the login form if not signed in, else return."""
     session = current_session()
     if session is None:
         login_form(client)
         st.stop()
-    client.token = session.token  # type: ignore[union-attr]
-    _block_platform_managers(client)
     return session  # type: ignore[return-value]
 
 
