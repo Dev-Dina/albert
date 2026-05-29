@@ -190,6 +190,17 @@ async def post_widget_chat(
             ) from None
         reply = result.reply
 
+    # Backstop: an empty reply (e.g. a degenerate LLM "stop" with no text) would
+    # fail the guardrails output check's min_length=1 validation and surface as a
+    # hard 400. Substitute a safe, non-empty fallback so the visitor gets a
+    # graceful message instead of an error.
+    if not reply or not reply.strip():
+        logger.warning(
+            "widget_chat.empty_reply conversation_id=%s — using fallback",
+            str(conversation_id),
+        )
+        reply = "Sorry, I wasn't able to put together a response just then. Could you try rephrasing your question?"
+
     if not await _guardrails_check("output", reply, runtime.tenant_rails):
         raise HTTPException(status_code=400, detail="Response blocked by guardrails")
 
