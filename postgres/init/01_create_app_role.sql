@@ -18,7 +18,7 @@ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'albert_app') THEN
         CREATE ROLE albert_app WITH
             LOGIN
-            PASSWORD 'albert_app_pass'
+            PASSWORD 'albert_app'
             NOSUPERUSER
             INHERIT
             NOCREATEDB
