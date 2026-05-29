@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import Role
-from app.auth.users import hash_password
+from app.auth.password import hash_password
 from app.db.models.membership import TenantMembership
 from app.db.models.tenant import Tenant
 from app.db.models.user import User
@@ -286,8 +286,9 @@ async def create_platform_manager(
     Guards:
     - Email must not already be registered on the platform.
 
-    The new manager's TenantMembership has tenant_id=None — they are
-    platform-scoped and their JWT will carry no tenant_id claim.
+    The manager is platform-scoped: ``users.platform_role = 'tenant_manager'`` and
+    NO tenant membership row (memberships are strictly tenant-scoped). Their role
+    is resolved from ``platform_role``; their token carries no tenant.
     """
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none() is not None:
@@ -298,17 +299,9 @@ async def create_platform_manager(
         email=email,
         hashed_password=hash_password(password),
         is_active=True,
+        platform_role=Role.tenant_manager.value,
     )
     db.add(manager_user)
-    await db.flush()
-
-    membership = TenantMembership(
-        id=uuid.uuid4(),
-        tenant_id=None,
-        user_id=manager_user.id,
-        role=Role.tenant_manager.value,
-    )
-    db.add(membership)
     await db.flush()
 
     await record_audit(

@@ -51,11 +51,11 @@ sys.path.insert(0, str(_APP_ROOT))  # enable `import app...`
 import seed_demo_tenant  # noqa: E402  — sibling script (repo-root scripts/)
 from sqlalchemy import select  # noqa: E402
 
-from app.core.security import hash_password  # noqa: E402
+from app.auth.password import hash_password  # noqa: E402
 from app.db.models.user import User  # noqa: E402
 from app.db.session import AsyncSessionLocal  # noqa: E402
 
-_MANAGER_EMAIL = "admin@example.com"
+_MANAGER_EMAIL = "manager@example.com"
 _DEV_PASSWORD = "admin123"  # local dev only — documented, never a real secret
 
 

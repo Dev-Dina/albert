@@ -1,76 +1,38 @@
 import uuid
 from collections.abc import AsyncIterator
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.roles import CurrentUser, get_current_user
 from app.clients import vault_client
 from app.core.security import (
     WidgetSessionClaims,
     WidgetTokenError,
-    decode_access_token,
     verify_widget_session_token,
 )
 from app.core.tenant_context import tenant_context
-from app.db.models.membership import TenantMembership
-from app.db.models.user import User
 from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion
 from app.db.session import get_db
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
-
-_credentials_exc = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Could not validate credentials",
-    headers={"WWW-Authenticate": "Bearer"},
-)
-
-
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    """Resolve the current user from a verified Bearer token. 401 on any failure."""
-    try:
-        payload = decode_access_token(token)
-    except JWTError:
-        raise _credentials_exc from None
-
-    subject = payload.get("sub")
-    if subject is None:
-        raise _credentials_exc
-
-    try:
-        user_id = uuid.UUID(str(subject))
-    except (ValueError, TypeError):
-        raise _credentials_exc from None
-
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if user is None or not user.is_active:
-        raise _credentials_exc
-    return user
-
 
 async def get_admin_tenant_id(
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    current: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> str:
-    """Return the tenant_id for the authenticated admin user.
+    """Return the tenant_id for the authenticated tenant-scoped user.
 
-    Reads from tenant_memberships — never from a client-supplied header/body.
-    Raises 403 if the user has no tenant membership.
+    Resolved from ``tenant_memberships`` via the verified principal — never from
+    a client-supplied body. Platform managers (no tenant) are refused 403.
     """
-    result = await db.execute(
-        select(TenantMembership.tenant_id).where(TenantMembership.user_id == user.id)
-    )
-    row = result.scalar_one_or_none()
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tenant membership")
-    return str(row)
+    if current.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required; platform managers have no tenant content access.",
+        )
+    return str(current.tenant_id)
 
 
 _widget_credentials_exc = HTTPException(

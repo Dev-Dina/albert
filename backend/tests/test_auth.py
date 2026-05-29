@@ -1,86 +1,80 @@
+"""Auth contract: JSON /auth/login (fastapi-users-issued JWT) + /auth/me.
+
+No DB — the fastapi-users UserManager and current-user dependency are overridden
+with stubs so the test exercises the route contract (credential check delegated
+to fastapi-users, JWT issued by the JWT strategy) without a live database.
+"""
+
+from __future__ import annotations
+
 import uuid
 
 from fastapi.testclient import TestClient
 
-from app.core.security import create_access_token, hash_password, verify_password
-from app.db.models.user import User
-from app.db.session import get_db
+from app.auth.fastapi_users import current_active_user, get_user_manager
+from app.auth.password import hash_password, verify_password
 from app.main import app
+from app.schemas.auth import CurrentUserResponse  # noqa: F401  (contract reference)
 
 client = TestClient(app)
 
 _USER_ID = uuid.uuid4()
+_EMAIL = "admin-acme@example.com"
 _PASSWORD = "admin123"
 
 
-def _make_user() -> User:
-    return User(
-        id=_USER_ID,
-        email="admin@example.com",
-        hashed_password=hash_password(_PASSWORD),
-        is_active=True,
-        platform_role="tenant_manager",
-    )
+class _FakeUser:
+    def __init__(self, *, is_active: bool = True, platform_role: str | None = None) -> None:
+        self.id = _USER_ID
+        self.email = _EMAIL
+        self.is_active = is_active
+        self.platform_role = platform_role
 
 
-class _FakeScalars:
-    """Stand-in for Result.scalars(); current login reads memberships via .first()."""
+class _StubUserManager:
+    """Minimal stand-in for fastapi-users UserManager.authenticate()."""
 
-    def first(self) -> object:
-        return None  # no membership → login resolves to the default member role
-
-    def all(self) -> list:
-        return []
-
-
-class _FakeResult:
-    def __init__(self, obj: object) -> None:
-        self._obj = obj
-
-    def scalar_one_or_none(self) -> object:
-        return self._obj
-
-    def scalars(self) -> "_FakeScalars":
-        return _FakeScalars()
-
-
-class _FakeSession:
-    """Minimal stand-in for AsyncSession: returns a fixed user for any query."""
-
-    def __init__(self, user: object) -> None:
+    def __init__(self, user: _FakeUser | None) -> None:
         self._user = user
 
-    async def execute(self, *args: object, **kwargs: object) -> _FakeResult:
-        return _FakeResult(self._user)
+    async def authenticate(self, credentials) -> _FakeUser | None:
+        if self._user is None:
+            return None
+        if credentials.username == _EMAIL and credentials.password == _PASSWORD:
+            return self._user
+        return None
 
 
-def _override_db(user: object):
-    async def _get_db():
-        yield _FakeSession(user)
+def _override_user_manager(user: _FakeUser | None):
+    def _dep():
+        return _StubUserManager(user)
 
-    return _get_db
+    return _dep
 
 
 def teardown_function() -> None:
     app.dependency_overrides.clear()
 
 
+# ---------------------------------------------------------------------------
+# Password hashing (the shared fastapi-users helper)
+# ---------------------------------------------------------------------------
+
 def test_hash_verifies_correct_password() -> None:
-    hashed = hash_password(_PASSWORD)
-    assert verify_password(_PASSWORD, hashed)
+    assert verify_password(_PASSWORD, hash_password(_PASSWORD))
 
 
 def test_hash_rejects_wrong_password() -> None:
-    hashed = hash_password(_PASSWORD)
-    assert not verify_password("wrong-password", hashed)
+    assert not verify_password("wrong-password", hash_password(_PASSWORD))
 
+
+# ---------------------------------------------------------------------------
+# /auth/login — JSON adapter over fastapi-users
+# ---------------------------------------------------------------------------
 
 def test_login_success_returns_bearer_token() -> None:
-    app.dependency_overrides[get_db] = _override_db(_make_user())
-    response = client.post(
-        "/auth/login",
-        json={"email": "admin@example.com", "password": _PASSWORD},
-    )
+    app.dependency_overrides[get_user_manager] = _override_user_manager(_FakeUser())
+    response = client.post("/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
     assert response.status_code == 200
     body = response.json()
     assert body["token_type"] == "bearer"
@@ -88,28 +82,35 @@ def test_login_success_returns_bearer_token() -> None:
 
 
 def test_login_wrong_password_returns_401() -> None:
-    app.dependency_overrides[get_db] = _override_db(_make_user())
-    response = client.post(
-        "/auth/login",
-        json={"email": "admin@example.com", "password": "wrong-password"},
-    )
+    app.dependency_overrides[get_user_manager] = _override_user_manager(_FakeUser())
+    response = client.post("/auth/login", json={"email": _EMAIL, "password": "nope"})
     assert response.status_code == 401
 
+
+def test_login_inactive_user_returns_401() -> None:
+    app.dependency_overrides[get_user_manager] = _override_user_manager(
+        _FakeUser(is_active=False)
+    )
+    response = client.post("/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# /auth/me
+# ---------------------------------------------------------------------------
 
 def test_me_without_token_returns_401() -> None:
-    response = client.get("/auth/me")
-    assert response.status_code == 401
+    assert client.get("/auth/me").status_code == 401
 
 
-def test_me_with_valid_token_returns_user() -> None:
-    app.dependency_overrides[get_db] = _override_db(_make_user())
-    token = create_access_token(subject=str(_USER_ID), role="tenant_manager")
-    response = client.get(
-        "/auth/me", headers={"Authorization": f"Bearer {token}"}
+def test_me_with_valid_user_returns_identity() -> None:
+    app.dependency_overrides[current_active_user] = lambda: _FakeUser(
+        platform_role="tenant_manager"
     )
+    response = client.get("/auth/me")
     assert response.status_code == 200
     body = response.json()
     assert body["id"] == str(_USER_ID)
-    assert body["email"] == "admin@example.com"
+    assert body["email"] == _EMAIL
     assert body["role"] == "tenant_manager"
     assert body["is_active"] is True

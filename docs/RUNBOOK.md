@@ -17,7 +17,7 @@ docker compose --profile bootstrap up bootstrap   # runs scripts/bootstrap_dev.p
 ```
 
 It prints demo URLs + credentials and the seeded widget id. Demo logins (**dev-only**):
-`admin@example.com / admin123` (platform `tenant_manager`) and
+`manager@example.com / admin123` (platform `tenant_manager`) and
 `admin-acme@example.com / admin123` (`tenant_admin` for `acme`). The `bootstrap`
 service is profile-gated, so a plain `docker compose up -d` never runs it.
 

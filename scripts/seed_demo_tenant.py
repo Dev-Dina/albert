@@ -26,8 +26,8 @@ sys.path.insert(0, str(REPO_ROOT / "backend"))
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
+from app.auth.password import hash_password  # noqa: E402
 from app.clients import vault_client  # noqa: E402
-from app.core.security import hash_password  # noqa: E402
 from app.db.models.membership import TenantMembership  # noqa: E402
 from app.db.models.tenant import Tenant  # noqa: E402
 from app.db.models.user import User  # noqa: E402

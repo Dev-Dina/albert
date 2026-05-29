@@ -16,12 +16,9 @@ dependencies = [
     "pgvector",
     "jinja2",
     "pydantic[email]",
+    # python-jose is used ONLY by the per-tenant widget-session token system
+    # (app/core/security.py); user-login auth is handled by fastapi-users (pwdlib).
     "python-jose[cryptography]",
-    "passlib[bcrypt]",
-    # passlib 1.7.4 is incompatible with bcrypt >=4.1 (reads removed
-    # bcrypt.__about__); the lock regen pulled bcrypt 5.0.0. Pin to a
-    # passlib-compatible release.
-    "bcrypt<4.1",
     "redis[hiredis]",
     "minio",
     "opentelemetry-api",
@@ -29,6 +26,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc",
     "opentelemetry-instrumentation-fastapi",
     "opentelemetry-instrumentation-httpx",
+    "fastapi-users[sqlalchemy]>=15",
 ]
 [dependency-groups]
 dev = [

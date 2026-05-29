@@ -1,27 +1,25 @@
-import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from fastapi_users.db import SQLAlchemyBaseUserTableUUID
+from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
 
-class User(Base):
-    """Platform user account."""
+class User(SQLAlchemyBaseUserTableUUID, Base):
+    """Platform user account.
+
+    Inherits id/email/hashed_password/is_active/is_superuser/is_verified from
+    fastapi-users. ``is_superuser`` exists only for fastapi-users compatibility;
+    Concierge authorization NEVER branches on it — it uses ``platform_role``
+    (platform level) and ``tenant_memberships.role`` (tenant level) exclusively.
+    """
 
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    hashed_password: Mapped[str | None] = mapped_column(String, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    # Platform-level role (e.g. "tenant_manager"); distinct from tenant_memberships.role.
-    # Column lives in migration 0002_add_user_platform_role; restored here after a prior
-    # main-merge dropped it from the model (model/migration drift).
+    # Platform-level role; only legal non-NULL value is "tenant_manager".
+    # Distinct from tenant_memberships.role (which is always tenant-scoped).
     platform_role: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

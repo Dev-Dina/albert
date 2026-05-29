@@ -88,7 +88,7 @@ credentials, and the seeded widget id. Demo logins (**dev-only**, documented):
 
 | Role | Email | Password |
 |---|---|---|
-| Platform manager (`tenant_manager`) | `admin@example.com` | `admin123` |
+| Platform manager (`tenant_manager`) | `manager@example.com` | `admin123` |
 | Tenant admin for `acme` (`tenant_admin`) | `admin-acme@example.com` | `admin123` |
 
 Admin UI: <http://localhost:8501> · Backend docs: <http://localhost:8000/docs> ·
