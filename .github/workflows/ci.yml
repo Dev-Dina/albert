@@ -381,7 +381,9 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://albert_app:albert_app_pass@localhost:5432/albert
           JWT_SECRET: ci-test-secret-not-real
       - name: Run isolation evals
-        run: uv run pytest ../evals/isolation/ -v --tb=short
+        # `python -m pytest` (not bare `pytest`) so the backend working dir is on
+        # sys.path — evals/conftest.py imports `app`, which lives under backend/.
+        run: uv run python -m pytest ../evals/isolation/ -v --tb=short
         working-directory: backend
         env:
           # The evals connect as the superuser and `SET ROLE albert_app`
