@@ -34,14 +34,14 @@ from pathlib import Path
 # Make the backend package root importable when run as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select
 
-from app.auth.models import Role  # noqa: E402
-from app.auth.password import hash_password  # noqa: E402
-from app.db.models.membership import TenantMembership  # noqa: E402
-from app.db.models.tenant import Tenant  # noqa: E402
-from app.db.models.user import User  # noqa: E402
-from app.db.session import AsyncSessionLocal  # noqa: E402
+from app.auth.models import Role
+from app.auth.password import hash_password
+from app.db.models.membership import TenantMembership 
+from app.db.models.tenant import Tenant  
+from app.db.models.user import User  
+from app.db.session import AsyncSessionLocal  
 
 DEV_PASSWORD = "admin123"  # local dev only — documented, never a real secret
 MANAGER_EMAIL = "manager@example.com"

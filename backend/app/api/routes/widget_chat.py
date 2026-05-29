@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.adapters.embedder import EmbedError
 from app.adapters.llm import LLMProviderError
 from app.api.deps import get_widget_session
 from app.clients import inference_client
@@ -127,17 +128,24 @@ async def post_widget_chat(
     decision = await router_service.classify_and_route(payload.message, tenant_id)
 
     # Cheap workflow paths handle enumerable easy cases without the agent;
-    # reply=None means fall back to the bounded agent.
-    wf = await workflow.dispatch(
-        decision,
-        message=payload.message,
-        tenant_id=tenant_id,
-        conversation_id=str(conversation_id),
-        db_ctx=tenant_db_ctx,
-        redis=redis,
-        embedder=request.app.state.embedder,
-        reranker=request.app.state.reranker,
-    )
+    # reply=None means fall back to the bounded agent. The RAG path embeds the
+    # query, so a provider embedding failure becomes a controlled 503, not a 500.
+    try:
+        wf = await workflow.dispatch(
+            decision,
+            message=payload.message,
+            tenant_id=tenant_id,
+            conversation_id=str(conversation_id),
+            db_ctx=tenant_db_ctx,
+            redis=redis,
+            embedder=request.app.state.embedder,
+            reranker=request.app.state.reranker,
+        )
+    except EmbedError:
+        logger.warning("widget_chat.embed_unavailable conversation_id=%s", str(conversation_id))
+        raise HTTPException(
+            status_code=503, detail="Knowledge retrieval is temporarily unavailable"
+        ) from None
 
     if wf.dropped:
         raise HTTPException(status_code=400, detail="Message blocked")
@@ -175,8 +183,14 @@ async def post_widget_chat(
             raise HTTPException(
                 status_code=503, detail="AI service temporarily unavailable"
             ) from None
+        except EmbedError:
+            logger.warning("widget_chat.embed_unavailable conversation_id=%s", str(conversation_id))
+            raise HTTPException(
+                status_code=503, detail="Knowledge retrieval is temporarily unavailable"
+            ) from None
         reply = result.reply
 
+    logger.warning("DEBUG_reply len=%d head=%r", len(reply or ""), (reply or "")[:120])
     if not await _guardrails_check("output", reply, runtime.tenant_rails):
         raise HTTPException(status_code=400, detail="Response blocked by guardrails")
 

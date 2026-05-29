@@ -11,9 +11,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # Ensure the backend package root is importable regardless of invocation CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.core.config import settings  # noqa: E402
-from app.db.base import Base  # noqa: E402
-from app.db import models  # noqa: E402,F401  (registers models on Base.metadata)
+from app.core.config import settings  
+from app.db.base import Base  
 
 config = context.config
 

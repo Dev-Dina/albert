@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.adapters.embedder import EmbedError
 from app.adapters.llm import LLMProviderError
 from app.api.deps import get_admin_tenant_id
 from app.clients import inference_client
@@ -85,16 +86,22 @@ async def chat(
 
     # Cheap workflow paths handle enumerable easy cases without the agent;
     # reply=None means fall back to the bounded agent.
-    wf = await workflow.dispatch(
-        decision,
-        message=body.message,
-        tenant_id=tenant_id,
-        conversation_id=body.conversation_id,
-        db_ctx=tenant_db_ctx,
-        redis=redis,
-        embedder=request.app.state.embedder,
-        reranker=request.app.state.reranker,
-    )
+    try:
+        wf = await workflow.dispatch(
+            decision,
+            message=body.message,
+            tenant_id=tenant_id,
+            conversation_id=body.conversation_id,
+            db_ctx=tenant_db_ctx,
+            redis=redis,
+            embedder=request.app.state.embedder,
+            reranker=request.app.state.reranker,
+        )
+    except EmbedError:
+        logger.warning("chat.embed_unavailable conversation_id=%s", body.conversation_id)
+        raise HTTPException(
+            status_code=503, detail="Knowledge retrieval is temporarily unavailable"
+        ) from None
 
     if wf.dropped:
         raise HTTPException(status_code=400, detail="Message blocked")
@@ -133,6 +140,11 @@ async def chat(
             logger.warning("chat.llm_unavailable conversation_id=%s", body.conversation_id)
             raise HTTPException(
                 status_code=503, detail="AI service temporarily unavailable"
+            ) from None
+        except EmbedError:
+            logger.warning("chat.embed_unavailable conversation_id=%s", body.conversation_id)
+            raise HTTPException(
+                status_code=503, detail="Knowledge retrieval is temporarily unavailable"
             ) from None
         reply = result.reply
 

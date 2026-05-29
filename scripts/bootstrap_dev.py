@@ -48,12 +48,12 @@ _APP_ROOT = _find_app_root()
 sys.path.insert(0, str(_APP_ROOT))  # enable `import app...`
 # _SCRIPT_DIR is already sys.path[0] for the sibling `import seed_demo_tenant`.
 
-import seed_demo_tenant  # noqa: E402  — sibling script (repo-root scripts/)
-from sqlalchemy import select  # noqa: E402
+import seed_demo_tenant
+from sqlalchemy import select
 
-from app.auth.password import hash_password  # noqa: E402
-from app.db.models.user import User  # noqa: E402
-from app.db.session import AsyncSessionLocal  # noqa: E402
+from app.auth.password import hash_password
+from app.db.models.user import User
+from app.db.session import AsyncSessionLocal 
 
 _MANAGER_EMAIL = "manager@example.com"
 _DEV_PASSWORD = "admin123"  # local dev only — documented, never a real secret

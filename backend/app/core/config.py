@@ -77,7 +77,11 @@ class Settings(BaseSettings):
     # (precomputed; not read from this setting; never called in CI). Changing this
     # value changes the live agent model.
     gemini_model: str = "gemini-2.5-flash-lite"
-    gemini_embedding_model: str = "text-embedding-004"
+    # Hosted embedding model + output dimensionality. Dimensions MUST match the
+    # child_chunks.embedding pgvector column (vector(768)). gemini-embedding-001
+    # supports output_dimensionality; text-embedding-004 is deprecated (404s).
+    gemini_embedding_model: str = "gemini-embedding-001"
+    gemini_embedding_dimensions: int = 768
     groq_api_key: SecretStr | None = None
     groq_model: str = "llama-3.1-8b-instant"
     agent_max_iterations: int = 5

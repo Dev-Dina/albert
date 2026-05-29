@@ -22,13 +22,13 @@ _SCRIPTS = Path(__file__).resolve().parents[2] / "backend" / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-import seed_dev_user  # noqa: E402
+import seed_dev_user  
 
-from app.auth.password import verify_password  # noqa: E402
-from app.db.models.membership import TenantMembership  # noqa: E402
-from app.db.models.tenant import Tenant  # noqa: E402
-from app.db.models.user import User  # noqa: E402
-from app.db.session import AsyncSessionLocal, async_engine  # noqa: E402
+from app.auth.password import verify_password  
+from app.db.models.membership import TenantMembership  
+from app.db.models.tenant import Tenant  
+from app.db.models.user import User  
+from app.db.session import AsyncSessionLocal, async_engine  
 
 
 @pytest.mark.asyncio

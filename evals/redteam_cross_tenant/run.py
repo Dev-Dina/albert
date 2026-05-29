@@ -12,9 +12,9 @@ GUARDRAILS_ROOT = ROOT / "guardrails"
 if str(GUARDRAILS_ROOT) not in sys.path:
     sys.path.insert(0, str(GUARDRAILS_ROOT))
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient  
 
-from app.main import app  # noqa: E402
+from app.main import app  
 
 GATE_NAME = "redteam_cross_tenant"
 FIXTURE_DIR = ROOT / "evals" / "redteam_cross_tenant" / "fixtures"

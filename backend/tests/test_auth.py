@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from app.auth.fastapi_users import current_active_user, get_user_manager
 from app.auth.password import hash_password, verify_password
 from app.main import app
-from app.schemas.auth import CurrentUserResponse  # noqa: F401  (contract reference)
+
 
 client = TestClient(app)
 

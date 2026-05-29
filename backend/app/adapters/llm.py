@@ -96,6 +96,10 @@ class LLMAdapter:
             max_output_tokens=resolved_max_tokens,
             system_instruction=system_instruction,
             tools=gemini_tools,
+            # Disable "thinking" so the token budget is spent on the actual answer
+            # / tool call. gemini-2.5-flash(-lite) can otherwise consume the entire
+            # max_output_tokens on thinking and return a candidate with no parts.
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
 
         try:
@@ -153,7 +157,7 @@ class _GeminiChoiceWrapper:
 
         has_fn = any(
             hasattr(p, "function_call") and p.function_call is not None
-            for p in (candidate.content.parts if candidate.content else [])
+            for p in (candidate.content.parts if candidate.content and candidate.content.parts else [])
         )
         self.finish_reason = "tool_calls" if has_fn else "stop"
 
@@ -166,7 +170,7 @@ class _GeminiMessageWrapper:
         self.content: str = ""
         self.tool_calls: list | None = None
 
-        if candidate is None or not candidate.content:
+        if candidate is None or not candidate.content or candidate.content.parts is None:
             return
 
         text_parts = []

@@ -28,7 +28,7 @@ _SCRIPTS = Path(__file__).resolve().parents[2] / "backend" / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-import seed_dev_user  # noqa: E402
+import seed_dev_user  
 
 from app.api.deps import get_admin_tenant_id  # noqa: E402
 from app.auth.fastapi_users import UserManager, auth_backend  # noqa: E402

@@ -15,11 +15,11 @@ GUARDRAILS_ROOT = ROOT / "guardrails"
 if str(GUARDRAILS_ROOT) not in sys.path:
     sys.path.insert(0, str(GUARDRAILS_ROOT))
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient  
 
-from app.main import app as guardrails_app  # noqa: E402
-from app.redaction import RedactionFilter as GuardrailsRedactionFilter  # noqa: E402
-from app.tracing import is_safe_span_attribute as guardrails_safe_attr  # noqa: E402
+from app.main import app as guardrails_app  
+from app.redaction import RedactionFilter as GuardrailsRedactionFilter  
+from app.tracing import is_safe_span_attribute as guardrails_safe_attr  
 
 GATE_NAME = "redaction"
 FIXTURE_DIR = ROOT / "evals" / "redaction" / "fixtures"
