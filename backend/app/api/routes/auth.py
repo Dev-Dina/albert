@@ -21,6 +21,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.auth.fastapi_users import UserManager, auth_backend, current_active_user, get_user_manager
 from app.db.models.user import User
+from app.ratelimit import check_auth_rate_limit
 from app.schemas.auth import CurrentUserResponse, LoginRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -36,6 +37,7 @@ _invalid_credentials = HTTPException(
 async def login(
     body: LoginRequest,
     user_manager: Annotated[UserManager, Depends(get_user_manager)],
+    _rl: Annotated[None, Depends(check_auth_rate_limit)],
 ) -> TokenResponse:
     """Authenticate with email + password and return a fastapi-users JWT.
 
