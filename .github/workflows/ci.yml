@@ -123,15 +123,16 @@ jobs:
       - name: Run smoke
         env:
           SMOKE_TIMEOUT_SECONDS: "120"
+          SMOKE_SEEDED_CHAT: "0"
         run: |
           cp .env.example .env
-          # Backend lifespan constructs genai.Client at startup which raises
-          # ValueError on an empty api_key. Smoke only hits /health so the
-          # key never has to be valid — but it must be non-empty. .env.example
-          # ships these empty. Rewriting in-place (instead of appending) avoids
-          # docker compose's version-dependent duplicate-key behaviour where
-          # an earlier empty value can shadow a later non-empty one.
-          # CI-only; do not propagate to prod.
+          # Provider keys are intentionally fake in CI. Smoke verifies compose
+          # startup, service health, guardrails, modelserver, widget origin/session
+          # gates, and invalid-token handling without real provider calls.
+          # Seeded chat is disabled here because demo seeding embeds RAG content
+          # and requires a real provider key. Full provider-backed widget/RAG chat
+          # remains a local/manual demo check.
+          # Rewrite in-place so an earlier empty value cannot shadow the fake one.
           sed -i 's|^GEMINI_API_KEY=$|GEMINI_API_KEY=ci-dummy-not-a-real-key|' .env
           sed -i 's|^GROQ_API_KEY=$|GROQ_API_KEY=ci-dummy-not-a-real-key|' .env
           # Show the relevant lines so a future failure is debuggable from
