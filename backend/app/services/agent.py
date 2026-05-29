@@ -202,10 +202,13 @@ async def _dispatch_tool(
         )
 
     if tool_name == "escalate":
+        # tenant_id + conversation_id come from trusted server context, NEVER the
+        # LLM tool args (the model only supplies a human-readable reason/summary).
+        # Using tool_args here was the bug that sent conversation_id="unknown".
         return await escalate(
             tenant_id=tenant_id,
-            conversation_id=tool_args.get("conversation_id", "unknown"),
-            reason=tool_args["reason"],
+            conversation_id=conversation_id or "",
+            reason=tool_args.get("reason") or "Visitor requested human assistance.",
             summary=tool_args.get("summary", ""),
             db=db,
         )

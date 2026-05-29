@@ -190,7 +190,6 @@ async def post_widget_chat(
             ) from None
         reply = result.reply
 
-    logger.warning("DEBUG_reply len=%d head=%r", len(reply or ""), (reply or "")[:120])
     if not await _guardrails_check("output", reply, runtime.tenant_rails):
         raise HTTPException(status_code=400, detail="Response blocked by guardrails")
 
