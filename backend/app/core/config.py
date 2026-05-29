@@ -17,10 +17,17 @@ class Settings(BaseSettings):
     are masked in ``repr`` so settings are safe to log accidentally.
     """
 
+    # ``.env`` is a single file shared by every service in docker-compose and by
+    # alembic (``MIGRATION_DATABASE_URL``, read via os.getenv in alembic/env.py —
+    # intentionally not a backend field). So the backend must ignore env keys it
+    # does not own rather than reject them; ``extra="forbid"`` made loading the
+    # shared .env from the repo root crash with extra_forbidden. Every field has a
+    # safe default and real secrets come from Vault, so ignoring unknown keys is
+    # safe here.
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="forbid",
+        extra="ignore",
     )
 
     app_name: str = "albert"
