@@ -3,7 +3,9 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, String, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+
+from app.db.types import GUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -19,9 +21,9 @@ class TenantGuardrailConfig(Base):
 
     __tablename__ = "tenant_guardrail_configs"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+        GUID, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
     )
     allowed_topics: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     blocked_topics: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)

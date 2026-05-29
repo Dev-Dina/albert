@@ -4,7 +4,7 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from app.db.types import GUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -20,12 +20,12 @@ class ContentChunk(Base):
 
     __tablename__ = "content_chunks"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+        GUID, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
     cms_page_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("cms_pages.id", ondelete="CASCADE"), nullable=True
+        GUID, ForeignKey("cms_pages.id", ondelete="CASCADE"), nullable=True
     )
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[Any | None] = mapped_column(Vector(1536), nullable=True)

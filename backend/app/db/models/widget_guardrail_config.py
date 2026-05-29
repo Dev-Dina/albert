@@ -3,7 +3,9 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+
+from app.db.types import GUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -18,10 +20,10 @@ class WidgetGuardrailConfig(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        GUID, primary_key=True, default=uuid.uuid4
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -35,7 +37,7 @@ class WidgetGuardrailConfig(Base):
         nullable=False,
     )
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        GUID,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
