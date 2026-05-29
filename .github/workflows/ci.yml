@@ -232,9 +232,11 @@ jobs:
       - name: Run Alembic migrations
         working-directory: backend
         run: uv run alembic upgrade head
-      - name: Run isolation evals
-        working-directory: backend
-        run: uv run python -m pytest ../evals/isolation -vv
+      # Isolation evals run in the dedicated "Isolation Evals (Gate)" job, which
+      # provisions the albert_app role + superuser-seeded RLS context they
+      # require. Running them here (as the bare postgres service, no app role)
+      # duplicated that gate and always failed; the retrieval/ingestion checks
+      # below are the RAG-relevant slice.
       - name: Run retrieval/ingestion/isolation unit tests (Owner C handoff)
         working-directory: backend
         run: uv run pytest tests/test_ingestion.py tests/test_retrieval.py tests/test_chunk_isolation.py -v
@@ -373,15 +375,20 @@ jobs:
         run: uv run alembic upgrade head
         working-directory: backend
         env:
-          DATABASE_MIGRATE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
+          # alembic/env.py reads MIGRATION_DATABASE_URL for DDL (falls back to
+          # DATABASE_URL). DDL must run as the superuser, not albert_app.
+          MIGRATION_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
           DATABASE_URL: postgresql+asyncpg://albert_app:albert_app_pass@localhost:5432/albert
           JWT_SECRET: ci-test-secret-not-real
       - name: Run isolation evals
         run: uv run pytest ../evals/isolation/ -v --tb=short
         working-directory: backend
         env:
-          DATABASE_URL: postgresql+asyncpg://albert_app:albert_app_pass@localhost:5432/albert
-          DATABASE_MIGRATE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
+          # The evals connect as the superuser and `SET ROLE albert_app`
+          # internally to exercise FORCE RLS, so seeding (done as admin) is not
+          # blocked. Connecting directly as albert_app would fail the seed step.
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
+          MIGRATION_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/albert
           JWT_SECRET: ci-test-secret-not-real
 
   # ─────────────────────────────────────────────────────────────────────
