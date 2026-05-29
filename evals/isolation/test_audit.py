@@ -26,7 +26,10 @@ _TEST_DB_URL = settings.database_url or "postgresql+asyncpg://postgres:postgres@
 MANAGER_ID = uuid.UUID("cccccccc-0000-0000-0000-000000000001")
 
 
-@pytest.fixture(scope="module")
+# Function-scoped: pytest-asyncio runs each test in its own event loop, so a
+# module-scoped engine would bind its pooled connection to the first test's
+# loop and the next test fails with "attached to a different loop".
+@pytest.fixture
 def engine():
     import asyncio
     e = create_async_engine(_TEST_DB_URL, future=True)
