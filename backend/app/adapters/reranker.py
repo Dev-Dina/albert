@@ -29,7 +29,6 @@ class RerankerAdapter:
                 model="rerank-v3.5",
                 query=query,
                 documents=texts,
-                return_documents=False,
             )
             return [(r.index, r.relevance_score) for r in response.results]
         except Exception as exc:

@@ -208,12 +208,17 @@ div.stButton > button:focus-visible {{
   border-radius: 12px;
   overflow: auto;
   max-height: 70vh;
+  background: {COLORS['surface']};
 }}
 table.albert-table {{
   width: 100%;
   border-collapse: collapse;
   font-size: {TYPE_SCALE['meta']};
+  background: {COLORS['surface']};
 }}
+/* Rows default to the light surface so cell text stays dark-on-light even when
+   Streamlit falls back to its dark base theme (the design is light-only). */
+table.albert-table tbody tr {{ background: {COLORS['surface']}; }}
 table.albert-table thead th {{
   position: sticky;
   top: 0;

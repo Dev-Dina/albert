@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { WidgetPublicView } from "../api";
-import { sendChat } from "../api";
+import { HttpError, sendChat } from "../api";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
 
@@ -57,13 +57,19 @@ export function Chat({ widget }: Props): JSX.Element {
           text: response.message,
         },
       ]);
-    } catch {
+    } catch (err) {
+      // Only a 401 (session re-exchange failed) is a genuine session problem;
+      // everything else (e.g. a guardrails block or transient server error) is
+      // not, so don't tell the visitor to refresh.
+      const sessionExpired = err instanceof HttpError && err.status === 401;
       setMessages((prev) => [
         ...prev,
         {
           id: `e-${Date.now()}`,
           author: "assistant",
-          text: "Session expired — please refresh the page.",
+          text: sessionExpired
+            ? "Session expired — please refresh the page."
+            : "Something went wrong — please try again.",
         },
       ]);
     } finally {

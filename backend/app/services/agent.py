@@ -105,12 +105,32 @@ async def run_agent(
 
         # Model returned a plain text reply — done.
         if choice.finish_reason == "stop":
-            return AgentResult(
-                reply=choice.message.content or "",
-                escalated=False,
-                iterations_used=iterations,
-                tool_calls=tool_calls_made,
-            )
+            reply_text = choice.message.content or ""
+            if not reply_text.strip():
+                # Gemini occasionally returns a "stop" with no text right after a
+                # tool call (e.g. after rag_search). Returning "" would fail the
+                # output guardrail's min_length check and surface as a hard error,
+                # so retry the same turn once — replies with text are unaffected.
+                logger.warning(
+                    "agent.empty_stop tenant=%s conv=%s iter=%d — retrying once",
+                    tenant_id, conversation_id, iterations,
+                )
+                retry = await llm.chat(
+                    tenant_id=tenant_id,
+                    messages=messages,
+                    tools=TOOL_LIST,
+                    max_tokens=settings.agent_max_tokens_per_turn,
+                )
+                reply_text = retry.choices[0].message.content or ""
+            if reply_text.strip():
+                return AgentResult(
+                    reply=reply_text,
+                    escalated=False,
+                    iterations_used=iterations,
+                    tool_calls=tool_calls_made,
+                )
+            # Still empty after a retry — fall through to the bounded fallback.
+            break
 
         # Model wants to call tools.
         if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
