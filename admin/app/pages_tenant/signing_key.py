@@ -46,15 +46,20 @@ def signing_key_state(meta: SigningKeyMeta | None) -> str:
 
 
 def _render_current(client: BackendClient) -> None:
+    slot = st.empty()
+    with slot.container():
+        ui.loading_skeleton(2)
     try:
         meta = client.get_signing_key()
     except BackendError as exc:
+        slot.empty()
         if handle_backend_error(exc):
             return
         if ui.error_state(f"Could not load current key metadata: {exc}", key="key-retry"):
             st.rerun()
         return
 
+    slot.empty()
     section("Current signing key")
     state = signing_key_state(meta)
     st.markdown(

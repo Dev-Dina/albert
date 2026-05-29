@@ -7,7 +7,11 @@ checked only for count parity so the two builders can never drift.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.lib.nav import build_navigation, nav_entries
+
+_APP_DIR = Path(__file__).resolve().parents[1] / "app"
 
 _EXPECTED_PLATFORM = {
     "Overview",
@@ -69,6 +73,13 @@ def test_build_navigation_count_matches_entries() -> None:
     assert len(build_navigation("tenant_manager")) == 6
     assert len(build_navigation("tenant_admin")) == 8
     assert build_navigation("other") == []
+
+
+def test_no_member_role_surface_exists() -> None:
+    # FR-052 (covered-by-design): there is no member-role page directory, so a
+    # 'member' can never enumerate an admin surface (the nav resolver also
+    # returns [] for it — see test_other_and_unknown_roles_get_no_navigation).
+    assert not any(_APP_DIR.glob("pages_member*")), "no member-role surface allowed"
 
 
 def test_no_platform_page_references_tenant_content_paths() -> None:

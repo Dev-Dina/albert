@@ -34,15 +34,20 @@ def main() -> None:
     client = BackendClient(token=session.token)
     st.markdown("<h1>Tenant detail</h1>", unsafe_allow_html=True)
 
+    slot = st.empty()
+    with slot.container():
+        ui.loading_skeleton(3)
     try:
         tenants = client.list_tenants(limit=200)
     except BackendError as exc:
+        slot.empty()
         if handle_backend_error(exc):
             return
         if ui.error_state(f"Couldn't load tenants: {exc}", key="td-list-retry"):
             st.rerun()
         return
 
+    slot.empty()
     if not tenants:
         ui.empty_state("No tenants yet", description="Create a tenant first.")
         return

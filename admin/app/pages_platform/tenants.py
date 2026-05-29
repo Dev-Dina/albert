@@ -40,15 +40,20 @@ def _status_label(status: str) -> str:
 
 
 def _render_list(client: BackendClient) -> list:
+    slot = st.empty()
+    with slot.container():
+        ui.loading_skeleton(4)
     try:
         tenants = client.list_tenants(limit=200)
     except BackendError as exc:
+        slot.empty()
         if handle_backend_error(exc):
             return []
         if ui.error_state(f"Couldn't load tenants: {exc}", key="tn-retry"):
             st.rerun()
         return []
 
+    slot.empty()
     st.markdown("<h2>Tenants</h2>", unsafe_allow_html=True)
     if not tenants:
         ui.empty_state(

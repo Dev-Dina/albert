@@ -33,12 +33,12 @@ COLORS = {
     "border_strong": "#cbd5e1", # slate-300
     "text_primary": "#0f172a",  # slate-900
     "text_secondary": "#475569",# slate-600
-    "text_muted": "#94a3b8",    # slate-400
-    "danger": "#dc2626",        # red-600
+    "text_muted": "#64748b",    # slate-500 — AA-compliant muted text (≥4.5 on surface)
+    "danger": "#b91c1c",        # red-700 — AA-compliant on danger_bg
     "danger_bg": "#fef2f2",
-    "warning": "#d97706",       # amber-600
+    "warning": "#b45309",       # amber-700 — AA-compliant on warning_bg
     "warning_bg": "#fffbeb",
-    "success": "#059669",       # emerald-600
+    "success": "#047857",       # emerald-700 — AA-compliant on success_bg
     "success_bg": "#ecfdf5",
 }
 

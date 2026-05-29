@@ -30,9 +30,13 @@ def main() -> None:
     )
 
     if _ACCUM_KEY not in st.session_state:
+        slot = st.empty()
+        with slot.container():
+            ui.loading_skeleton(5)
         st.session_state[_ACCUM_KEY] = []
         st.session_state[_CURSOR_KEY] = None
         _load_more(client, first=True)
+        slot.empty()
 
     if st.button("Refresh", key="audit-refresh"):
         st.session_state[_ACCUM_KEY] = []
