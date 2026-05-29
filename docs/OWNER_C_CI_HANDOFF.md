@@ -31,7 +31,8 @@ uv run --project modelserver python -m evals.classifier.run
 Expected final line:
 
 ```text
-GATE=classifier STATUS=pass OBSERVED=<macro-f1> THRESHOLD=0.600000
+GATE=classifier STATUS=pass OBSERVED=<macro-f1> 0.95
+THRESHOLD=0.950000
 ```
 
 Current observed macro-F1: `0.971762`.
