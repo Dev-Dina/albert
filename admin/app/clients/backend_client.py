@@ -196,6 +196,16 @@ class CmsPageRow:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class EscalationRow:
+    conversation_id: str
+    reason: str
+    summary: str
+    conversation_status: str
+    created_at: str
+    updated_at: str
+
+
 class BackendClient:
     """Thin httpx wrapper. Stateful only in the optional ``token`` field."""
 
@@ -717,6 +727,27 @@ class BackendClient:
             )
         self._raise_for_status(r)
 
+    # -- tenant-admin: escalations (feature 007) ---------------------------
+
+    def list_escalations(self, *, limit: int = 50) -> list[EscalationRow]:
+        with self._client() as c:
+            r = c.get(
+                "/api/v1/admin/escalations",
+                params={"limit": limit},
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return [_escalation_from_json(item) for item in r.json()]
+
+    def get_escalation(self, conversation_id: str) -> EscalationRow:
+        with self._client() as c:
+            r = c.get(
+                f"/api/v1/admin/escalations/{conversation_id}",
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return _escalation_from_json(r.json())
+
 
 def _drop_none(params: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in params.items() if v is not None}
@@ -784,6 +815,17 @@ def _cms_page_from_json(item: dict[str, Any]) -> CmsPageRow:
         slug=item.get("slug") or "",
         body=item.get("body") or "",
         is_published=bool(item.get("is_published", False)),
+        created_at=str(item.get("created_at") or ""),
+        updated_at=str(item.get("updated_at") or ""),
+    )
+
+
+def _escalation_from_json(item: dict[str, Any]) -> EscalationRow:
+    return EscalationRow(
+        conversation_id=str(item["conversation_id"]),
+        reason=item.get("reason") or "",
+        summary=item.get("summary") or "",
+        conversation_status=item.get("conversation_status") or "",
         created_at=str(item.get("created_at") or ""),
         updated_at=str(item.get("updated_at") or ""),
     )

@@ -103,5 +103,21 @@ async def escalate(
         conv.status = "escalated"
 
     await db.flush()
+
+    # Persist the escalation context (1:1 per conversation, upsert). The reason
+    # was already validated above; summary may be empty (FR-033). This runs on
+    # the same chat-session DB, whose app.current_tenant RLS GUC is already set
+    # (the path that writes conversations/messages) — tenant_id/conversation_id
+    # come only from the verified session context, never from the LLM.
+    from app.repositories import escalation_repo
+
+    await escalation_repo.upsert(
+        db,
+        tenant_id=tenant_uuid,
+        conversation_id=conv_uuid,
+        reason=reason.strip(),
+        summary=summary.strip(),
+    )
+
     logger.info("escalate.persisted tenant=%s conv=%s", tenant_id, conversation_id)
     return {"ticket_id": conversation_id, "status": "escalated"}

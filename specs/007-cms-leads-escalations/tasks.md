@@ -134,21 +134,21 @@ row; reason-only escalation stores empty summary; Beta never sees it.
 
 ### Tests for User Story 3 (write first, must FAIL)
 
-- [ ] T031 [P] [US3] Unit test for escalation upsert in `backend/tests/test_escalation.py` (insert on first; update reason/summary/updated_at on re-escalation; single row enforced; reason-only → summary='').
-- [ ] T032 [P] [US3] Integration test for `GET /api/v1/admin/escalations` and `/{conversation_id}` in `backend/tests/test_escalation.py` (list shows reason+summary+conversation_status; 404 for non-tenant). Include a **real-path** test: drive an escalation through the widget-chat flow (tenant GUC set as in production) and assert the `escalations` row persists under RLS — not only a direct `escalate(...)` call.
-- [ ] T033 [P] [US3] Cross-tenant test (Beta cannot list/get Acme escalations → not shown / 404) in `backend/tests/test_escalation.py`.
+- [X] T031 [P] [US3] Unit test for escalation upsert in `backend/tests/test_escalation.py` (insert on first; update reason/summary/updated_at on re-escalation; single row enforced; reason-only → summary=''). ✓
+- [X] T032 [P] [US3] Integration test for `GET /api/v1/admin/escalations` and `/{conversation_id}` in `backend/tests/test_escalation.py` (list shows reason+summary+conversation_status; 404 for non-tenant), **plus the M1 real-path test**: drive escalation through `_dispatch_tool` on a real DB session and assert the `escalations` row persists — not only a direct `escalate(...)` call. ✓
+- [X] T033 [P] [US3] Cross-tenant test (Beta cannot list/get Acme escalations → not shown / 404) in `backend/tests/test_escalation.py`. ✓
 
 ### Implementation for User Story 3
 
-- [ ] T034 [P] [US3] Create `backend/app/repositories/escalation_repo.py`: `upsert(session, tenant_id, conversation_id, reason, summary)`, `list_for_tenant(session, tenant_id, limit, offset)` (join conversations for status, newest updated_at first), `get_for_tenant(session, tenant_id, conversation_id)`.
-- [ ] T035 [US3] Update `backend/app/tools/escalate.py` to upsert an `escalations` row (via repo) after ensuring the conversation row exists, using the verified `tenant_id`/`conversation_id` from session context; keep return shape; keep no-db degradation path. **RLS note**: `escalations` is FORCE-RLS, so the insert/update requires `app.current_tenant` to be set on the chat-path DB session — confirm the widget-chat flow already sets the tenant GUC (it must, since it writes RLS-forced `conversations`/`messages`), and the upsert must run within that same tenant context (never set tenant from client input). (depends on T034)
-- [ ] T036 [P] [US3] Create `backend/app/schemas/admin_escalations.py` with `EscalationResponse` (conversation_id, reason, summary, conversation_status, created_at, updated_at).
-- [ ] T037 [US3] Create read service `backend/app/services/escalation_service.py` (`list_escalations`, `get_escalation`) over the repo. (depends on T034, T036)
-- [ ] T038 [US3] Create routes `backend/app/api/routes/admin_escalations.py` (`GET /api/v1/admin/escalations`, `GET /{conversation_id}`) with `AdminIdentityDep`; register router in `backend/app/main.py`. (depends on T037)
-- [ ] T039 [P] [US3] Add escalation client methods in `admin/app/clients/backend_client.py`.
-- [ ] T040 [US3] Create Streamlit `admin/app/pages_tenant/escalations.py` (list + detail with reason/summary; empty-state); register in `admin/app/lib/nav.py`. (depends on T039)
-- [ ] T041 [P] [US3] Add admin forbidden-endpoint/nav test for escalations page in `admin/tests/test_pages_tenant_forbidden_endpoints.py` and `admin/tests/test_nav.py`.
-- [ ] T042 [US3] Run US3 tests green: `docker compose exec backend pytest backend/tests/test_escalation.py -q`; manual check via quickstart §3.
+- [X] T034 [P] [US3] Create `backend/app/repositories/escalation_repo.py`: `upsert`, `list_for_tenant` (join conversations for status, newest updated_at first), `get_for_tenant`. ✓
+- [X] T035 [US3] Update `backend/app/tools/escalate.py` to upsert an `escalations` row (via repo) after ensuring the conversation row exists, using the verified `tenant_id`/`conversation_id`. RLS note resolved: the chat path already runs with `app.current_tenant` set (it writes RLS-forced `conversations`/`messages`; `agent.py:228` calls escalate on that session) — confirmed by the real-path test T032. ✓
+- [X] T036 [P] [US3] Create `backend/app/schemas/admin_escalations.py` with `EscalationResponse`. ✓
+- [X] T037 [US3] Create read service `backend/app/services/escalation_service.py` (`list_escalations`, `get_escalation`, `EscalationNotFoundError`). ✓
+- [X] T038 [US3] Create routes `backend/app/api/routes/admin_escalations.py` (`GET /api/v1/admin/escalations`, `GET /{conversation_id}`) with `AdminIdentityDep`; registered in `backend/app/main.py`. ✓
+- [X] T039 [P] [US3] Add escalation client methods + `EscalationRow` in `admin/app/clients/backend_client.py`. ✓
+- [X] T040 [US3] Create Streamlit `admin/app/pages_tenant/escalations.py` (list + reason/summary detail; empty-state); registered in `admin/app/lib/nav.py` (tenant surface 9→10). ✓
+- [X] T041 [P] [US3] Updated admin nav test for the Escalations page; forbidden-endpoint guard auto-covers `escalations.py`. ✓
+- [X] T042 [US3] US3 tests green: `test_escalation.py` + `test_escalate.py` (10 passed); full backend **239 passed**, admin **52 passed**. Live check via quickstart §3 bundled into Phase 6 (T046).
 
 **Checkpoint**: All three stories independently functional.
 
