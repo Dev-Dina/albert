@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 from app.services.retrieval import retrieve
+from app.tenancy import erasure as erasure_mod
 from app.tenancy.erasure import erase_tenant
 
 _TEST_DB_URL = settings.database_url or "postgresql+asyncpg://postgres:postgres@postgres:5432/albert"
@@ -229,6 +230,39 @@ async def _seed_tenant(
         {"id": str(ce_id), "tid": str(tenant_id)},
     )
 
+    # Escalation (migration 0015) — tenant-owned, FORCE RLS, FK to the conversation
+    # above with ON DELETE CASCADE. Erasure must delete it EXPLICITLY (and before the
+    # conversation) so it is counted, not removed incidentally by the cascade.
+    esc_id = uuid.uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO escalations "
+            "(id, tenant_id, conversation_id, reason, summary, status) VALUES "
+            "(:id, :tid, :cid, 'angry customer', 'needs human', 'open')"
+        ),
+        {"id": str(esc_id), "tid": str(tenant_id), "cid": str(conv_id)},
+    )
+
+    # Tenant membership — tenant-owned but NO RLS; neither FK cascade fires on erasure
+    # (tenant is tombstoned, users are kept), so the link would survive unless deleted
+    # explicitly. Seed a dedicated member user per tenant (only the link is erased).
+    member_id = uuid.uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO users (id, email, hashed_password, is_active) VALUES "
+            "(:id, :email, 'x', true) ON CONFLICT (id) DO NOTHING"
+        ),
+        {"id": str(member_id), "email": f"member-{member_id.hex[:8]}@test.local"},
+    )
+    membership_id = uuid.uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO tenant_memberships (id, tenant_id, user_id, role) VALUES "
+            "(:id, :tid, :uid, 'tenant_admin')"
+        ),
+        {"id": str(membership_id), "tid": str(tenant_id), "uid": str(member_id)},
+    )
+
     await db.flush()
     return {
         "cms_id": cms_id,
@@ -238,6 +272,9 @@ async def _seed_tenant(
         "conv_id": conv_id,
         "msg_id": msg_id,
         "lead_id": lead_id,
+        "esc_id": esc_id,
+        "member_id": member_id,
+        "membership_id": membership_id,
     }
 
 
@@ -330,6 +367,7 @@ async def test_erasure_is_total(db: AsyncSession) -> None:
         "cost_events",
         "leads",
         "messages",
+        "escalations",
         "conversations",
         "child_chunks",
         "parent_chunks",
@@ -341,12 +379,32 @@ async def test_erasure_is_total(db: AsyncSession) -> None:
         "widget_allowed_origins",
         "widget_signing_key_versions",
         "widget_guardrail_configs",
+        "tenant_memberships",
     ]:
         remaining = await _count(db, table, TENANT_X)
         assert remaining == 0, (
             f"Store FAIL: {table} still has {remaining} rows for tenant {TENANT_X}. "
             "'Deleted but still searchable' is a compliance failure."
         )
+
+    # escalations + tenant_memberships must be deleted EXPLICITLY and counted in the
+    # audit summary (not removed incidentally by a cascade / left behind entirely).
+    assert summary.get("postgres.escalations") == 1, (
+        "Erasure must explicitly delete and count escalations "
+        f"(summary={summary.get('postgres.escalations')!r})."
+    )
+    assert summary.get("postgres.tenant_memberships") == 1, (
+        "Erasure must delete and count tenant_memberships "
+        f"(summary={summary.get('postgres.tenant_memberships')!r})."
+    )
+
+    # Cross-tenant: TENANT_Y's escalation + membership must survive TENANT_X erasure.
+    assert await _count(db, "escalations", TENANT_Y) == 1, (
+        "Isolation FAIL: escalations for TENANT_Y was deleted by TENANT_X erasure."
+    )
+    assert await _count(db, "tenant_memberships", TENANT_Y) == 1, (
+        "Isolation FAIL: tenant_memberships for TENANT_Y was deleted by TENANT_X erasure."
+    )
 
     # 2. pgvector — live chunks are explicitly asserted above; summary must record them.
     # Tenant B's live RAG chunks must survive Tenant A erasure.
@@ -476,6 +534,7 @@ _ALL_TENANT_TABLES = [
     "cost_events",
     "leads",
     "messages",
+    "escalations",
     "conversations",
     "child_chunks",
     "parent_chunks",
@@ -486,6 +545,7 @@ _ALL_TENANT_TABLES = [
     "widget_allowed_origins",
     "widget_signing_key_versions",
     "widget_guardrail_configs",
+    "tenant_memberships",
 ]
 
 
@@ -578,5 +638,37 @@ async def test_erasure_deletes_under_non_superuser_role(db: AsyncSession) -> Non
 
     # Audit row recorded with the actor id.
     assert await _audit_exists(db, TENANT_X, "tenant.erase")
+
+    await db.rollback()
+
+
+# ---------------------------------------------------------------------------
+# Guard: every table with a tenant_id column (live schema) is covered by erasure
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_erasure_covers_every_tenant_id_table_live(db: AsyncSession) -> None:
+    """Live tripwire: any table with a ``tenant_id`` column MUST be purged by erasure.
+
+    Introspects the live Postgres schema (information_schema) rather than the ORM, so
+    it also catches a table created by a raw SQL migration that has no ORM model. If a
+    future feature adds a tenant-owned table without listing it in erasure, this fails
+    and names it — converting a silent compliance leak into a caught regression.
+    """
+    result = await db.execute(
+        text(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE column_name = 'tenant_id' AND table_schema = 'public'"
+        )
+    )
+    tenant_tables = {row[0] for row in result.fetchall()}
+
+    covered = set(erasure_mod._TENANT_TABLES) | set(erasure_mod._OPTIONAL_LEGACY_TABLES)
+    uncovered = tenant_tables - covered
+    assert not uncovered, (
+        f"Erasure does not cover tenant-owned table(s) {sorted(uncovered)}. "
+        "Add them to _TENANT_TABLES in app/tenancy/erasure.py — an uncovered "
+        "tenant_id table is a right-to-erasure compliance leak."
+    )
 
     await db.rollback()

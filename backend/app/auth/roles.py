@@ -33,6 +33,7 @@ from app.auth.models import Role
 from app.db.models.membership import TenantMembership
 from app.db.models.user import User
 from app.db.session import get_db
+from app.tenancy.status import is_tenant_active
 
 
 class CurrentUser:
@@ -102,6 +103,15 @@ async def resolve_current_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not a member of the requested tenant.",
             )
+
+    # Tenant status gate: a tenant-scoped principal may act only on an ACTIVE tenant.
+    # A suspended/erased tenant is refused with the same shape as "No role assigned."
+    # so callers cannot distinguish suspended vs erased vs no-membership (no new leak).
+    # Platform managers returned earlier and are exempt (they hold no tenant context).
+    if not await is_tenant_active(db, membership.tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="No role assigned."
+        )
 
     try:
         role = Role(membership.role)

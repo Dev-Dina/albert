@@ -22,11 +22,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.fastapi_users import UserManager, auth_backend, get_user_manager
+from app.auth.models import Role
 from app.auth.roles import CurrentUserDep
 from app.db.models.tenant import Tenant
 from app.db.session import get_db
 from app.ratelimit import check_auth_rate_limit
 from app.schemas.auth import CurrentUserResponse, LoginRequest, TokenResponse
+from app.tenancy.status import user_has_active_tenant
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,16 +43,27 @@ _invalid_credentials = HTTPException(
 async def login(
     body: LoginRequest,
     user_manager: Annotated[UserManager, Depends(get_user_manager)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     _rl: Annotated[None, Depends(check_auth_rate_limit)],
 ) -> TokenResponse:
     """Authenticate with email + password and return a fastapi-users JWT.
 
     JSON compatibility wrapper: credential check + token issuance are performed
     by fastapi-users (``UserManager.authenticate`` + the JWT strategy).
+
+    Tenant status gate: a tenant-scoped user whose every tenant is non-active has no
+    usable tenant and is refused with the generic invalid-credentials response (no
+    disclosure that a tenant is suspended/erased). Platform managers (no tenant) and
+    users who belong to at least one active tenant log in normally.
     """
     credentials = OAuth2PasswordRequestForm(username=body.email, password=body.password)
     user = await user_manager.authenticate(credentials)
     if user is None or not user.is_active:
+        raise _invalid_credentials
+
+    if user.platform_role != Role.tenant_manager.value and not await user_has_active_tenant(
+        db, user.id
+    ):
         raise _invalid_credentials
 
     token = await auth_backend.get_strategy().write_token(user)

@@ -37,8 +37,9 @@ class _FakeMembership:
 
 
 class _FakeResult:
-    def __init__(self, rows: list) -> None:
-        self._rows = rows
+    def __init__(self, rows: list | None = None, scalar=None) -> None:
+        self._rows = rows or []
+        self._scalar = scalar
 
     def scalars(self):
         return self
@@ -46,13 +47,24 @@ class _FakeResult:
     def all(self):
         return self._rows
 
+    def scalar_one_or_none(self):
+        return self._scalar
+
 
 class _FakeDB:
-    def __init__(self, rows: list) -> None:
-        self._rows = rows
+    """Routes the two reads resolve_current_user issues: the membership SELECT
+    (``.scalars().all()``) and the tenant-status SELECT (``.scalar_one_or_none()``).
+    ``tenant_status`` defaults to active so existing resolution tests are unaffected.
+    """
 
-    async def execute(self, *args, **kwargs):
-        return _FakeResult(self._rows)
+    def __init__(self, rows: list, tenant_status: str | None = "active") -> None:
+        self._rows = rows
+        self._tenant_status = tenant_status
+
+    async def execute(self, statement, *args, **kwargs):
+        if "tenant_memberships" in str(statement).lower():
+            return _FakeResult(rows=self._rows)
+        return _FakeResult(scalar=self._tenant_status)
 
 
 # ---------------------------------------------------------------------------

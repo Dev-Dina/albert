@@ -43,9 +43,11 @@ def _wire(state: _State) -> None:
 
     class _FakeSession:
         async def execute(self, *args, **kwargs):
+            _sql = str(args[0]).lower() if args else ""
+            _active = "tenants.status" in _sql or "from tenants" in _sql
             class _R:
                 def scalar_one_or_none(self_inner):
-                    return None
+                    return "active" if _active else None
             return _R()
 
     async def _fake_get_db():
