@@ -31,6 +31,7 @@ from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion
 from app.repositories import widget_repo
 from app.schemas.widget import WidgetPublicView
 from app.schemas.widget_session import WidgetSessionResponse
+from app.tenancy.status import is_tenant_active
 
 
 class WidgetSessionError(Exception):
@@ -94,6 +95,12 @@ async def exchange(
     lookup = await widget_repo.get_by_public_id(session, public_widget_id)
     if lookup is None or lookup.status != "enabled":
         raise WidgetSessionError("widget not available")
+
+    # Tenant status gate: refuse a non-active (suspended/erased) tenant before minting a
+    # session. Collapses into the route's uniform 403 (no enumeration / no new leak).
+    # ``tenants`` has no RLS, so this read needs no tenant context.
+    if not await is_tenant_active(session, lookup.tenant_id):
+        raise WidgetSessionError("tenant not active")
 
     # The remaining reads hit tenant-scoped tables (widget_allowed_origins,
     # widget_signing_key_versions, widgets) under FORCE ROW LEVEL SECURITY. The

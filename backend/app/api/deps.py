@@ -17,6 +17,7 @@ from app.core.security import (
 from app.core.tenant_context import tenant_context
 from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion
 from app.db.session import get_db
+from app.tenancy.status import is_tenant_active
 
 
 async def get_admin_tenant_id(
@@ -116,6 +117,13 @@ async def get_widget_session(
             )
         except WidgetTokenError as exc:
             raise _widget_credentials_exc from exc
+
+        # Tenant status gate: refuse chat for a non-active (suspended/erased) tenant,
+        # even with an already-issued, still-valid token. Reuses the generic widget 401
+        # so it discloses nothing (no suspended-vs-erased-vs-missing distinction).
+        # ``tenants`` has no RLS, so this read is unaffected by the tenant context.
+        if not await is_tenant_active(db, tenant_id):
+            raise _widget_credentials_exc
 
         # Approach A: no request-Origin re-check. The token's ``org`` claim is
         # informational only; tenant identity is the verified ``tnt`` claim. The

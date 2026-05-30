@@ -34,10 +34,14 @@ def _setup_widget_dependencies() -> None:
     from app.repositories import allowed_origin_repo, widget_repo
 
     class _FakeSession:
-        async def execute(self, *args, **kwargs):  # pragma: no cover - not used
+        async def execute(self, statement, *args, **kwargs):
+            # is_tenant_active() reads tenants.status; report the seeded tenant ACTIVE
+            # so the happy-path exchange proceeds. Any other read returns None as before.
+            sql = str(statement).lower()
+            active = "tenants.status" in sql or "from tenants" in sql
             class _R:
                 def scalar_one_or_none(self_inner):
-                    return None
+                    return "active" if active else None
             return _R()
 
     async def _fake_get_db():
@@ -187,10 +191,14 @@ def _wire_deps_for_chat_401_tests() -> None:
     from app.repositories import allowed_origin_repo
 
     class _FakeSession:
-        async def execute(self, *args, **kwargs):
+        async def execute(self, statement, *args, **kwargs):
+            # These 401 tests fail at signature/expiry before the status gate, but keep
+            # the stub status-aware so a valid token would still resolve an active tenant.
+            sql = str(statement).lower()
+            active = "tenants.status" in sql or "from tenants" in sql
             class _R:
                 def scalar_one_or_none(self_inner):
-                    return None
+                    return "active" if active else None
             return _R()
 
     async def _fake_get_db():

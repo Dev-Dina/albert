@@ -48,10 +48,22 @@ logger = logging.getLogger(__name__)
 # Widget tables (migration 0004) are tenant-owned too; because erasure UPDATEs the
 # tenants row to 'erased' (never DELETEs it), the FK ondelete=CASCADE never fires, so
 # they must be deleted explicitly here. They have no inter-FK, so order is free.
+#
+# escalations (migration 0015) has conversation_id -> conversations ON DELETE CASCADE.
+# It MUST be deleted BEFORE conversations: otherwise deleting conversations cascades
+# the escalation rows away first and the explicit DELETE here counts 0, undercounting
+# the audit summary. Its own tenant_id -> tenants CASCADE never fires (tenant is
+# tombstoned, not deleted), so explicit deletion is required.
+#
+# tenant_memberships is tenant-owned but has NO row-level security; its tenant_id ->
+# tenants and user_id -> users cascades never fire on erasure (tenant tombstoned, users
+# kept), so the membership link would otherwise survive. Deleting WHERE tenant_id =
+# target removes only the link, never the users row. No inter-FK, so it is placed last.
 _TENANT_TABLES = [
     "cost_events",
     "leads",
     "messages",
+    "escalations",
     "conversations",
     "child_chunks",
     "parent_chunks",
@@ -62,6 +74,7 @@ _TENANT_TABLES = [
     "widget_signing_key_versions",
     "widget_guardrail_configs",
     "widgets",
+    "tenant_memberships",
 ]
 _OPTIONAL_LEGACY_TABLES = [
     "content_chunks",

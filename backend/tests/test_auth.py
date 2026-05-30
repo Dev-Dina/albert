@@ -17,6 +17,7 @@ from app.auth.fastapi_users import current_active_user, get_user_manager
 from app.auth.models import Role
 from app.auth.password import hash_password, verify_password
 from app.auth.roles import CurrentUser, assert_not_tenant_manager_content_read
+from app.db.session import get_db
 from app.main import app
 
 
@@ -56,6 +57,30 @@ def _override_user_manager(user: _FakeUser | None):
     return _dep
 
 
+class _FakeAuthSession:
+    """Stub DB session for login: ``user_has_active_tenant`` issues a single
+    ``SELECT EXISTS(...)`` and reads ``.scalar()``."""
+
+    def __init__(self, has_active_tenant: bool) -> None:
+        self._has = has_active_tenant
+
+    async def execute(self, *args, **kwargs):
+        has = self._has
+
+        class _R:
+            def scalar(self_inner):
+                return has
+
+        return _R()
+
+
+def _override_get_db(has_active_tenant: bool):
+    async def _dep():
+        yield _FakeAuthSession(has_active_tenant)
+
+    return _dep
+
+
 def teardown_function() -> None:
     app.dependency_overrides.clear()
 
@@ -78,6 +103,7 @@ def test_hash_rejects_wrong_password() -> None:
 
 def test_login_success_returns_bearer_token() -> None:
     app.dependency_overrides[get_user_manager] = _override_user_manager(_FakeUser())
+    app.dependency_overrides[get_db] = _override_get_db(has_active_tenant=True)
     response = client.post("/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
     assert response.status_code == 200
     body = response.json()
@@ -87,6 +113,7 @@ def test_login_success_returns_bearer_token() -> None:
 
 def test_login_wrong_password_returns_401() -> None:
     app.dependency_overrides[get_user_manager] = _override_user_manager(_FakeUser())
+    app.dependency_overrides[get_db] = _override_get_db(has_active_tenant=True)
     response = client.post("/auth/login", json={"email": _EMAIL, "password": "nope"})
     assert response.status_code == 401
 
@@ -95,8 +122,31 @@ def test_login_inactive_user_returns_401() -> None:
     app.dependency_overrides[get_user_manager] = _override_user_manager(
         _FakeUser(is_active=False)
     )
+    app.dependency_overrides[get_db] = _override_get_db(has_active_tenant=True)
     response = client.post("/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
     assert response.status_code == 401
+
+
+def test_login_refused_when_user_has_no_active_tenant() -> None:
+    """FR-010: a tenant-scoped user whose every tenant is non-active (suspended/erased)
+    has no usable tenant and is refused with the generic 401 — no disclosure."""
+    app.dependency_overrides[get_user_manager] = _override_user_manager(_FakeUser())
+    app.dependency_overrides[get_db] = _override_get_db(has_active_tenant=False)
+    response = client.post("/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
+    assert response.status_code == 401
+
+
+def test_login_platform_manager_allowed_without_active_tenant() -> None:
+    """FR-014: a platform manager belongs to no tenant and must log in regardless of
+    any tenant's status (so lifecycle actions like erasure remain possible)."""
+    app.dependency_overrides[get_user_manager] = _override_user_manager(
+        _FakeUser(platform_role="tenant_manager")
+    )
+    # has_active_tenant=False proves the manager path never consults the membership read.
+    app.dependency_overrides[get_db] = _override_get_db(has_active_tenant=False)
+    response = client.post("/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
+    assert response.status_code == 200
+    assert response.json()["access_token"]
 
 
 # ---------------------------------------------------------------------------
