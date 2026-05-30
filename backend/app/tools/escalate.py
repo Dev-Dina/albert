@@ -66,8 +66,11 @@ async def escalate(
     Sets conversation status to 'escalated'. tenant_id and conversation_id
     come from verified session context — never from client input.
     """
+    # Log ids only — the escalation reason/summary are tenant free-text and are
+    # persisted to the escalations table, not the application log (Principle III).
     logger.info(
-        "escalate tenant=%s conv=%s reason=%r", tenant_id, conversation_id, reason
+        "escalate tenant=%s conv=%s reason_len=%d",
+        tenant_id, conversation_id, len(reason or ""),
     )
 
     EscalateArgs(reason=reason, summary=summary)

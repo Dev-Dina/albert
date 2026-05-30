@@ -158,11 +158,11 @@ row; reason-only escalation stores empty summary; Beta never sees it.
 
 **Purpose**: Cross-story isolation hardening, full validation, hygiene.
 
-- [ ] T043 [P] Extend `backend/tests/redteam/cross_tenant_demo.py` with cms_pages, leads (status update), and escalations cross-tenant assertions, plus an RLS fail-closed check (empty/wrong `app.current_tenant` → no rows) for `escalations`.
-- [ ] T044 [P] Logging hygiene review (Principle III): confirm no lead PII bodies, content bodies, or escalation free-text logged at info; ids/status only across `cms_service.py`, `escalate.py`, `admin_members_leads_service.py`.
-- [ ] T045 Run the full suites: `docker compose exec backend pytest backend/tests -q` and admin tests; fix regressions.
-- [ ] T046 Execute `specs/007-cms-leads-escalations/quickstart.md` end-to-end against the local stack (all three stories + isolation checks; verify SC-001 ≤1 min convergence).
-- [ ] T047 [P] If the temporary `http://localhost:8000` entry in Acme's `widget_allowed_origins` is still present from the gap-1 workaround, confirm it is unrelated to this feature and leave a note (do not change auth config here).
+- [X] T043 [P] Added consolidated admin-surface red-team `backend/tests/redteam/test_cross_tenant_admin.py` (Tenant B denied cms_pages, leads status-update, escalations → 404/empty). Named `test_*` so it runs in the unit suite (the existing `cross_tenant_demo.py` is a live-stack/explicit gate, not auto-collected). RLS fail-closed (empty/wrong `app.current_tenant` → 0 rows) verified live on Postgres in T046. ✓
+- [X] T044 [P] Logging hygiene review (Principle III): all log lines in the changed files emit ids/status/lengths only. Tightened the pre-existing `escalate` info log that emitted the raw `reason` → now logs `reason_len` only. ✓
+- [X] T045 Full suites green: backend **241 passed**, admin **52 passed**. ✓
+- [X] T046 Live quickstart against the running stack: CMS create→background index produced chunks (`parents=1 children=1`, SC-001 path, ≤5s); delete→chunks removed (SC-002 ✓); Beta→Acme page 404; lead `new→contacted` 200, backward 409 + `status_changed_at` stamped; escalations RLS fail-closed (empty=0, correct=1, wrong=0). **Found & fixed a latent FK-ordering bug** in `ingest_tenant_content` (children inserted before parents — no ORM `relationship()`; now flush parents before children) with a regression test. ✓
+- [X] T047 [P] Checked: acme's `widget_configs.allowed_origins` is empty; the gap-1 `localhost:8000` workaround lived in the separate allowlist and is moot since feature 006 decoupled the allowlist from request-time origin checks. No auth config changed here. ✓
 
 ---
 

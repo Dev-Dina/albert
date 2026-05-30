@@ -141,6 +141,42 @@ async def test_idempotency_deletes_existing_chunks_before_writing() -> None:
     assert call_args.args[0] == content_id or call_args.kwargs.get("content_id") == content_id
 
 
+@pytest.mark.asyncio
+async def test_parents_flushed_before_children_written() -> None:
+    """Regression: parents must be flushed before children are written, else the
+    child_chunks_parent_id_fkey FK is violated (no ORM relationship() orders them)."""
+    from unittest.mock import Mock
+
+    tenant_id = str(uuid.uuid4())
+    content_id = uuid.uuid4()
+    db = AsyncMock()
+    embedder = AsyncMock()
+    embedder.embed_batch.return_value = [[0.1] * 768]
+
+    pages = [_make_page(content_id, "Short content.")]
+    manager = Mock()
+
+    with patch("app.services.ingestion._fetch_content_pages", return_value=pages), \
+         patch("app.services.ingestion.ChunkRepo") as MockRepo:
+        mock_repo = MockRepo.return_value
+        mock_repo.delete_chunks_for_content = AsyncMock()
+        mock_repo.write_parent_chunks = AsyncMock()
+        mock_repo.write_child_chunks = AsyncMock()
+        # Record interleaved call order of parent-write, flush, child-write.
+        manager.attach_mock(mock_repo.write_parent_chunks, "write_parent_chunks")
+        manager.attach_mock(mock_repo.write_child_chunks, "write_child_chunks")
+        manager.attach_mock(db.flush, "flush")
+
+        await ingest_tenant_content(tenant_id=tenant_id, db=db, embedder=embedder)
+
+    names = [c[0] for c in manager.mock_calls]
+    p = names.index("write_parent_chunks")
+    c = names.index("write_child_chunks")
+    assert p < c, names
+    # a flush occurs between writing parents and writing children
+    assert "flush" in names[p + 1:c], names
+
+
 # --- feature 007: _fetch_content_pages reads published CMS pages -------------
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

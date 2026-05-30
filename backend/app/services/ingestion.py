@@ -148,8 +148,13 @@ async def ingest_tenant_content(
                 )
 
             # Write atomically: delete existing → write parents → write children.
+            # Flush parents BEFORE children: there is no ORM relationship() between
+            # ParentChunk and ChildChunk, so the unit-of-work does not guarantee
+            # parent INSERTs precede child INSERTs in a single flush — without this
+            # the child_chunks_parent_id_fkey FK is violated.
             await repo.delete_chunks_for_content(content_id, tenant_uuid)
             await repo.write_parent_chunks(parent_rows)
+            await db.flush()
             await repo.write_child_chunks(child_rows)
             await db.flush()
 
