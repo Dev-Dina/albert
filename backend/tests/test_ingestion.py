@@ -3,12 +3,22 @@
 All DB and API calls are mocked — no real database or API keys needed.
 """
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.adapters.embedder import EmbedError
-from app.services.ingestion import ingest_tenant_content, _split_into_chunks
+from app.db.base import Base
+from app.db.models.cms_page import CmsPage
+from app.db.models.tenant import Tenant
+from app.services import cms_service
+from app.services.ingestion import (
+    _fetch_content_pages,
+    _split_into_chunks,
+    ingest_tenant_content,
+)
 
 
 # --- chunker unit tests ---
@@ -139,3 +149,99 @@ async def test_idempotency_deletes_existing_chunks_before_writing() -> None:
 
     call_args = mock_repo.delete_chunks_for_content.call_args
     assert call_args.args[0] == content_id or call_args.kwargs.get("content_id") == content_id
+
+
+@pytest.mark.asyncio
+async def test_parents_flushed_before_children_written() -> None:
+    """Regression: parents must be flushed before children are written, else the
+    child_chunks_parent_id_fkey FK is violated (no ORM relationship() orders them)."""
+    tenant_id = str(uuid.uuid4())
+    content_id = uuid.uuid4()
+    db = AsyncMock()
+    embedder = AsyncMock()
+    embedder.embed_batch.return_value = [[0.1] * 768]
+
+    pages = [_make_page(content_id, "Short content.")]
+    manager = Mock()
+
+    with patch("app.services.ingestion._fetch_content_pages", return_value=pages), \
+         patch("app.services.ingestion.ChunkRepo") as MockRepo:
+        mock_repo = MockRepo.return_value
+        mock_repo.delete_chunks_for_content = AsyncMock()
+        mock_repo.write_parent_chunks = AsyncMock()
+        mock_repo.write_child_chunks = AsyncMock()
+        # Record interleaved call order of parent-write, flush, child-write.
+        manager.attach_mock(mock_repo.write_parent_chunks, "write_parent_chunks")
+        manager.attach_mock(mock_repo.write_child_chunks, "write_child_chunks")
+        manager.attach_mock(db.flush, "flush")
+
+        await ingest_tenant_content(tenant_id=tenant_id, db=db, embedder=embedder)
+
+    names = [c[0] for c in manager.mock_calls]
+    p = names.index("write_parent_chunks")
+    c = names.index("write_child_chunks")
+    assert p < c, names
+    # a flush occurs between writing parents and writing children
+    assert "flush" in names[p + 1:c], names
+
+
+# --- feature 007: _fetch_content_pages reads published CMS pages -------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_content_pages_returns_published_only_and_tenant_scoped() -> None:
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    tenant_a = uuid.uuid4()
+    tenant_b = uuid.uuid4()
+    async with SessionLocal() as s:
+        conn = await s.connection()
+        tables = [t for t in Base.metadata.sorted_tables if t.name in ("tenants", "cms_pages")]
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
+        s.add(Tenant(id=tenant_a, name="A", slug="a", status="active"))
+        s.add(Tenant(id=tenant_b, name="B", slug="b", status="active"))
+        published = CmsPage(
+            id=uuid.uuid4(), tenant_id=tenant_a, title="P", slug="p",
+            body="published body", is_published=True,
+        )
+        draft = CmsPage(
+            id=uuid.uuid4(), tenant_id=tenant_a, title="D", slug="d",
+            body="draft body", is_published=False,
+        )
+        other_tenant = CmsPage(
+            id=uuid.uuid4(), tenant_id=tenant_b, title="O", slug="o",
+            body="other tenant body", is_published=True,
+        )
+        s.add_all([published, draft, other_tenant])
+        await s.commit()
+
+        pages = await _fetch_content_pages(s, tenant_a, None)
+
+    assert {p["body"] for p in pages} == {"published body"}  # excludes draft + other tenant
+    assert {p["content_id"] for p in pages} == {published.id}
+
+
+@pytest.mark.asyncio
+async def test_remove_page_chunks_deletes_chunks_for_content() -> None:
+    """Delete path removes the page's chunks (content_id + tenant scoped)."""
+    tenant = str(uuid.uuid4())
+    page = str(uuid.uuid4())
+    fake_repo = AsyncMock()
+    fake_session = AsyncMock()
+    fake_session.__aenter__.return_value = fake_session
+    fake_session.__aexit__.return_value = False
+
+    with patch(
+        "app.services.cms_service._tenant_session", AsyncMock(return_value=fake_session)
+    ), patch("app.services.cms_service.ChunkRepo", return_value=fake_repo):
+        await cms_service._remove_page_chunks(object(), tenant, page)
+
+    fake_repo.delete_chunks_for_content.assert_awaited_once()
+    args = fake_repo.delete_chunks_for_content.await_args.args
+    assert str(args[0]) == page
+    assert str(args[1]) == tenant
+    fake_session.commit.assert_awaited_once()

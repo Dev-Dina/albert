@@ -175,6 +175,7 @@ class LeadRow:
     status: str
     created_at: str
     conversation_id: str | None
+    status_changed_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,27 @@ class MemberRow:
     user_id: str
     email: str
     created_at: str
+
+
+@dataclass(frozen=True)
+class CmsPageRow:
+    id: str
+    title: str
+    slug: str
+    body: str
+    is_published: bool
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class EscalationRow:
+    conversation_id: str
+    reason: str
+    summary: str
+    conversation_status: str
+    created_at: str
+    updated_at: str
 
 
 class BackendClient:
@@ -590,6 +612,17 @@ class BackendClient:
         self._raise_for_status(r)
         return [_lead_from_json(item) for item in r.json()]
 
+    def update_lead_status(self, lead_id: str, *, status: str) -> LeadRow:
+        """Advance a lead's status (feature 007, US2). 409 on a disallowed move."""
+        with self._client() as c:
+            r = c.patch(
+                f"/api/v1/admin/leads/{lead_id}",
+                headers=self._headers(),
+                json={"status": status},
+            )
+        self._raise_for_status(r)
+        return _lead_from_json(r.json())
+
     def list_members(self) -> list[MemberRow]:
         with self._client() as c:
             r = c.get("/api/v1/admin/members", headers=self._headers())
@@ -612,6 +645,108 @@ class BackendClient:
                 f"/api/v1/admin/members/{user_id}", headers=self._headers()
             )
         self._raise_for_status(r)
+
+    # -- tenant-admin: CMS content (feature 007) ---------------------------
+    #
+    # Hits the tenant-admin CMS router (``/api/v1/admin/cms``). The backend
+    # derives ``tenant_id`` from the verified JWT, so none of these methods
+    # accept a ``tenant_id`` argument.
+
+    def list_cms_pages(
+        self, *, published: bool | None = None, limit: int = 200
+    ) -> list[CmsPageRow]:
+        with self._client() as c:
+            r = c.get(
+                "/api/v1/admin/cms/pages",
+                params=_drop_none({"published": published, "limit": limit}),
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return [_cms_page_from_json(item) for item in r.json()]
+
+    def get_cms_page(self, page_id: str) -> CmsPageRow:
+        with self._client() as c:
+            r = c.get(
+                f"/api/v1/admin/cms/pages/{page_id}", headers=self._headers()
+            )
+        self._raise_for_status(r)
+        return _cms_page_from_json(r.json())
+
+    def create_cms_page(
+        self,
+        *,
+        title: str,
+        body: str,
+        slug: str | None = None,
+        is_published: bool = True,
+    ) -> CmsPageRow:
+        payload: dict[str, Any] = {
+            "title": title,
+            "body": body,
+            "is_published": is_published,
+        }
+        if slug:
+            payload["slug"] = slug
+        with self._client() as c:
+            r = c.post(
+                "/api/v1/admin/cms/pages", headers=self._headers(), json=payload
+            )
+        self._raise_for_status(r)
+        return _cms_page_from_json(r.json())
+
+    def update_cms_page(
+        self,
+        page_id: str,
+        *,
+        title: str | None = None,
+        body: str | None = None,
+        slug: str | None = None,
+        is_published: bool | None = None,
+    ) -> CmsPageRow:
+        payload = _drop_none(
+            {
+                "title": title,
+                "body": body,
+                "slug": slug,
+                "is_published": is_published,
+            }
+        )
+        with self._client() as c:
+            r = c.put(
+                f"/api/v1/admin/cms/pages/{page_id}",
+                headers=self._headers(),
+                json=payload,
+            )
+        self._raise_for_status(r)
+        return _cms_page_from_json(r.json())
+
+    def delete_cms_page(self, page_id: str) -> None:
+        with self._client() as c:
+            r = c.delete(
+                f"/api/v1/admin/cms/pages/{page_id}", headers=self._headers()
+            )
+        self._raise_for_status(r)
+
+    # -- tenant-admin: escalations (feature 007) ---------------------------
+
+    def list_escalations(self, *, limit: int = 50) -> list[EscalationRow]:
+        with self._client() as c:
+            r = c.get(
+                "/api/v1/admin/escalations",
+                params={"limit": limit},
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return [_escalation_from_json(item) for item in r.json()]
+
+    def get_escalation(self, conversation_id: str) -> EscalationRow:
+        with self._client() as c:
+            r = c.get(
+                f"/api/v1/admin/escalations/{conversation_id}",
+                headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return _escalation_from_json(r.json())
 
 
 def _drop_none(params: dict[str, Any]) -> dict[str, Any]:
@@ -661,6 +796,7 @@ def _lead_from_json(item: dict[str, Any]) -> LeadRow:
         status=item.get("status") or "new",
         created_at=str(item.get("created_at") or ""),
         conversation_id=str(item["conversation_id"]) if item.get("conversation_id") else None,
+        status_changed_at=str(item["status_changed_at"]) if item.get("status_changed_at") else None,
     )
 
 
@@ -669,6 +805,29 @@ def _member_from_json(item: dict[str, Any]) -> MemberRow:
         user_id=str(item["user_id"]),
         email=item.get("email") or "",
         created_at=str(item.get("created_at") or ""),
+    )
+
+
+def _cms_page_from_json(item: dict[str, Any]) -> CmsPageRow:
+    return CmsPageRow(
+        id=str(item["id"]),
+        title=item.get("title") or "",
+        slug=item.get("slug") or "",
+        body=item.get("body") or "",
+        is_published=bool(item.get("is_published", False)),
+        created_at=str(item.get("created_at") or ""),
+        updated_at=str(item.get("updated_at") or ""),
+    )
+
+
+def _escalation_from_json(item: dict[str, Any]) -> EscalationRow:
+    return EscalationRow(
+        conversation_id=str(item["conversation_id"]),
+        reason=item.get("reason") or "",
+        summary=item.get("summary") or "",
+        conversation_status=item.get("conversation_status") or "",
+        created_at=str(item.get("created_at") or ""),
+        updated_at=str(item.get("updated_at") or ""),
     )
 
 

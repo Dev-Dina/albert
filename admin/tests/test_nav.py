@@ -23,12 +23,14 @@ _EXPECTED_PLATFORM = {
 }
 _EXPECTED_TENANT = {
     "Overview",
+    "Content",
     "Widgets",
     "Allowed Origins",
     "Guardrails",
     "Embed Snippet",
     "Signing Key",
     "Leads",
+    "Escalations",
     "Members",
 }
 
@@ -41,9 +43,9 @@ def test_manager_gets_exactly_six_platform_entries() -> None:
     assert all(entry.path.startswith("pages_platform/") for entry in entries)
 
 
-def test_admin_gets_exactly_eight_tenant_entries() -> None:
+def test_admin_gets_exactly_ten_tenant_entries() -> None:
     entries = nav_entries("tenant_admin")
-    assert len(entries) == 8
+    assert len(entries) == 10
     assert {entry.title for entry in entries} == _EXPECTED_TENANT
     assert all(entry.path.startswith("pages_tenant/") for entry in entries)
 
@@ -71,7 +73,7 @@ def test_build_navigation_count_matches_entries() -> None:
     # st.Page construction does not require a running script (paths are not
     # validated at construction), so this is a safe parity smoke check.
     assert len(build_navigation("tenant_manager")) == 6
-    assert len(build_navigation("tenant_admin")) == 8
+    assert len(build_navigation("tenant_admin")) == 10
     assert build_navigation("other") == []
 
 

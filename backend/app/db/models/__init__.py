@@ -4,6 +4,7 @@ from app.db.models.cms_page import CmsPage
 from app.db.models.content_chunk import ContentChunk
 from app.db.models.conversation import Conversation
 from app.db.models.cost_event import CostEvent
+from app.db.models.escalation import Escalation
 from app.db.models.lead import Lead
 from app.db.models.membership import TenantMembership
 from app.db.models.message import Message
@@ -20,6 +21,7 @@ __all__ = [
     "ContentChunk",
     "Conversation",
     "CostEvent",
+    "Escalation",
     "Lead",
     "Message",
     "ParentChunk",

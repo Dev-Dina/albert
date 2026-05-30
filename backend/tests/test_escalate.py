@@ -67,9 +67,12 @@ async def test_escalate_with_valid_uuid_marks_conversation_escalated() -> None:
 
     assert result["status"] == "escalated"
     assert result["ticket_id"] == conversation_id
-    # A new conversation row was created and marked escalated.
-    assert len(db.added) == 1
-    assert db.added[0].status == "escalated"
+    # A new conversation row was created and marked escalated, AND an escalation
+    # record was persisted with the reason (feature 007, US3).
+    statuses = [getattr(obj, "status", None) for obj in db.added]
+    assert "escalated" in statuses  # the conversation row
+    reasons = [getattr(obj, "reason", None) for obj in db.added]
+    assert "Visitor wants a human." in reasons  # the escalation row
     assert db.flushed is True
 
 

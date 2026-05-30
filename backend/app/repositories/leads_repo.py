@@ -8,7 +8,7 @@ There is no path here that returns another tenant's leads.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,3 +42,27 @@ async def list_for_tenant(
 
     result = await session.execute(query)
     return list(result.scalars().all())
+
+
+async def get_for_tenant(
+    session: AsyncSession, *, tenant_id: uuid.UUID, lead_id: uuid.UUID
+) -> Lead | None:
+    """Fetch one lead for this tenant, or None (no cross-tenant disclosure)."""
+    result = await session.execute(
+        select(Lead).where(Lead.id == lead_id, Lead.tenant_id == tenant_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_status(
+    session: AsyncSession, *, lead: Lead, new_status: str
+) -> Lead:
+    """Set the lead's status and stamp ``status_changed_at``.
+
+    Caller is responsible for validating the transition and owning the
+    transaction (does not commit).
+    """
+    lead.status = new_status
+    lead.status_changed_at = datetime.now(timezone.utc)
+    await session.flush()
+    return lead
