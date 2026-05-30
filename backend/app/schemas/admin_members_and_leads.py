@@ -8,9 +8,21 @@ JWT membership and is NEVER accepted as a field on any of these models.
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
+
+
+class LeadStatus(str, Enum):
+    """Valid lead lifecycle statuses (feature 007, US2). Mirrors
+    ``app.services.lead_lifecycle.LEAD_STATUSES``."""
+
+    new = "new"
+    contacted = "contacted"
+    qualified = "qualified"
+    won = "won"
+    lost = "lost"
 
 
 class LeadResponse(BaseModel):
@@ -21,8 +33,15 @@ class LeadResponse(BaseModel):
     contact: str
     intent: str
     status: str
+    status_changed_at: datetime | None = None
     created_at: datetime
     conversation_id: UUID | None = None
+
+
+class LeadStatusUpdateRequest(BaseModel):
+    """Body of ``PATCH /api/v1/admin/leads/{lead_id}`` (feature 007, US2)."""
+
+    status: LeadStatus
 
 
 class MemberResponse(BaseModel):

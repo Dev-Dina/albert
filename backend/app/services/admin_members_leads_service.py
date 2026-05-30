@@ -24,6 +24,7 @@ from app.db.models.lead import Lead
 from app.db.models.membership import TenantMembership
 from app.db.models.user import User
 from app.repositories import leads_repo, members_repo
+from app.services import lead_lifecycle
 from app.tenancy.audit import record_audit
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,21 @@ logger = logging.getLogger(__name__)
 
 class EmailAlreadyRegisteredError(Exception):
     """The invited email already belongs to a platform user (409)."""
+
+
+class LeadNotFoundError(Exception):
+    """No lead with this id for the caller's tenant (404)."""
+
+
+class InvalidLeadTransitionError(Exception):
+    """Requested status transition is not allowed by the lifecycle (409)."""
+
+    def __init__(self, current: str, target: str) -> None:
+        super().__init__(
+            f"Cannot move a lead from {current!r} to {target!r}."
+        )
+        self.current = current
+        self.target = target
 
 
 class MemberNotFoundError(Exception):
@@ -64,6 +80,43 @@ async def list_leads(
         limit=limit,
         offset=offset,
     )
+
+
+async def get_lead(
+    session: AsyncSession, *, tenant_id: uuid.UUID, lead_id: uuid.UUID
+) -> Lead:
+    """Fetch one lead scoped to the caller's tenant, or raise LeadNotFoundError."""
+    lead = await leads_repo.get_for_tenant(
+        session, tenant_id=tenant_id, lead_id=lead_id
+    )
+    if lead is None:
+        raise LeadNotFoundError(str(lead_id))
+    return lead
+
+
+async def update_lead_status(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    lead_id: uuid.UUID,
+    new_status: str,
+) -> Lead:
+    """Advance a lead's status if the lifecycle permits the transition.
+
+    Raises ``LeadNotFoundError`` (404) or ``InvalidLeadTransitionError`` (409).
+    Does not commit — the caller owns the transaction.
+    """
+    lead = await get_lead(session, tenant_id=tenant_id, lead_id=lead_id)
+    if not lead_lifecycle.can_transition(lead.status, new_status):
+        raise InvalidLeadTransitionError(lead.status, new_status)
+    updated = await leads_repo.update_status(
+        session, lead=lead, new_status=new_status
+    )
+    logger.info(
+        "lead.status_changed tenant_id=%s lead=%s status=%s",
+        tenant_id, lead_id, new_status,
+    )
+    return updated
 
 
 # ---------------------------------------------------------------------------

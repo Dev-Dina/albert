@@ -105,19 +105,19 @@ returns 409 and Beta cannot touch an Acme lead.
 
 ### Tests for User Story 2 (write first, must FAIL)
 
-- [ ] T021 [P] [US2] Test the transition map (pure function) in `backend/tests/test_lead_lifecycle.py` (every allowed/terminal/disallowed pair).
-- [ ] T022 [P] [US2] Integration test in `backend/tests/test_lead_lifecycle.py` for `GET /api/v1/admin/leads/{id}` and `PATCH` (allowed → 200 + status_changed_at; disallowed → 409 unchanged; unknown value → 422).
-- [ ] T023 [P] [US2] Cross-tenant test (Beta GET/PATCH of Acme lead → 404) in `backend/tests/test_lead_lifecycle.py`.
+- [X] T021 [P] [US2] Test the transition map (pure function) in `backend/tests/test_lead_lifecycle.py` (every allowed/terminal/disallowed pair). ✓
+- [X] T022 [P] [US2] Integration test in `backend/tests/test_lead_lifecycle.py` for `GET /api/v1/admin/leads/{id}` and `PATCH` (allowed → 200 + status_changed_at; disallowed → 409 unchanged; unknown value → 422). ✓
+- [X] T023 [P] [US2] Cross-tenant test (Beta GET/PATCH of Acme lead → 404) in `backend/tests/test_lead_lifecycle.py`. ✓
 
 ### Implementation for User Story 2
 
-- [ ] T024 [P] [US2] Add `LeadStatus` enum + `LeadStatusUpdateRequest` and extend `LeadResponse` with `status_changed_at` in `backend/app/schemas/admin_members_and_leads.py`.
-- [ ] T025 [US2] Extend `backend/app/repositories/leads_repo.py` with `get_for_tenant(session, tenant_id, lead_id)` and `update_status(session, lead, new_status)` (sets `status_changed_at=now()`), keeping tenant scoping non-negotiable.
-- [ ] T026 [US2] Add transition map + `update_lead_status(...)` (validate target ∈ allowed set, else raise transition error) and `get_lead(...)` to `backend/app/services/admin_members_leads_service.py`. (depends on T024, T025)
-- [ ] T027 [US2] Add `GET /api/v1/admin/leads/{lead_id}` and `PATCH /api/v1/admin/leads/{lead_id}` to `backend/app/api/routes/admin_members_and_leads.py` (`AdminIdentityDep`; map errors → 404/409/422; include `status_changed_at` in responses). (depends on T026)
-- [ ] T028 [P] [US2] Add lead status-update client method in `admin/app/clients/backend_client.py`.
-- [ ] T029 [US2] Update `admin/app/pages_tenant/leads.py` with a lead detail view + status control offering only valid next states (terminal states disable changes). (depends on T028)
-- [ ] T030 [US2] Run US2 tests green: `docker compose exec backend pytest backend/tests/test_lead_lifecycle.py -q`; manual check via quickstart §2.
+- [X] T024 [P] [US2] Add `LeadStatus` enum + `LeadStatusUpdateRequest` and extend `LeadResponse` with `status_changed_at` in `backend/app/schemas/admin_members_and_leads.py`. ✓
+- [X] T025 [US2] Extend `backend/app/repositories/leads_repo.py` with `get_for_tenant(session, tenant_id, lead_id)` and `update_status(session, lead, new_status)` (sets `status_changed_at=now()`), keeping tenant scoping non-negotiable. ✓
+- [X] T026 [US2] Add transition map (`app/services/lead_lifecycle.py`) + `update_lead_status(...)`/`get_lead(...)` + typed errors (`LeadNotFoundError`, `InvalidLeadTransitionError`) to `backend/app/services/admin_members_leads_service.py`. ✓
+- [X] T027 [US2] Add `GET /api/v1/admin/leads/{lead_id}` and `PATCH /api/v1/admin/leads/{lead_id}` to `backend/app/api/routes/admin_members_and_leads.py` (`AdminIdentityDep`; errors → 404/409/422; `status_changed_at` in responses via shared `_lead_response`). ✓
+- [X] T028 [P] [US2] Add `update_lead_status` client method + `status_changed_at` on `LeadRow` in `admin/app/clients/backend_client.py`. ✓
+- [X] T029 [US2] Update `admin/app/pages_tenant/leads.py` with a status control offering only valid next states (terminal states disabled). ✓
+- [X] T030 [US2] US2 tests green: `test_lead_lifecycle.py` + `test_admin_leads_endpoint.py` (11 passed); full backend **234 passed**, admin **52 passed**. Live check via quickstart §2 bundled into Phase 6 (T046).
 
 **Checkpoint**: US1 and US2 both independently functional.
 

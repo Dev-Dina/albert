@@ -20,6 +20,7 @@ from app.api.routes.admin_widgets import AdminIdentityDep
 from app.db.session import get_db
 from app.schemas.admin_members_and_leads import (
     LeadResponse,
+    LeadStatusUpdateRequest,
     MemberInviteRequest,
     MemberRemoveResponse,
     MemberResponse,
@@ -27,6 +28,19 @@ from app.schemas.admin_members_and_leads import (
 from app.services import admin_members_leads_service as svc
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-members-leads"])
+
+
+def _lead_response(lead) -> LeadResponse:
+    return LeadResponse(
+        id=lead.id,
+        name=lead.name,
+        contact=lead.contact,
+        intent=lead.intent,
+        status=lead.status,
+        status_changed_at=lead.status_changed_at,
+        created_at=lead.created_at,
+        conversation_id=lead.conversation_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -53,18 +67,50 @@ async def list_leads(
         limit=limit,
         offset=offset,
     )
-    return [
-        LeadResponse(
-            id=lead.id,
-            name=lead.name,
-            contact=lead.contact,
-            intent=lead.intent,
-            status=lead.status,
-            created_at=lead.created_at,
-            conversation_id=lead.conversation_id,
+    return [_lead_response(lead) for lead in leads]
+
+
+@router.get("/leads/{lead_id}", response_model=LeadResponse)
+async def get_lead(
+    lead_id: uuid.UUID,
+    identity: AdminIdentityDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LeadResponse:
+    """Fetch one lead scoped to the caller's tenant (404 if not theirs)."""
+    try:
+        lead = await svc.get_lead(db, tenant_id=identity.tenant_id, lead_id=lead_id)
+    except svc.LeadNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="lead not found"
+        ) from exc
+    return _lead_response(lead)
+
+
+@router.patch("/leads/{lead_id}", response_model=LeadResponse)
+async def update_lead_status(
+    lead_id: uuid.UUID,
+    body: LeadStatusUpdateRequest,
+    identity: AdminIdentityDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LeadResponse:
+    """Advance a lead's status along the lifecycle (409 on disallowed transition)."""
+    try:
+        lead = await svc.update_lead_status(
+            db,
+            tenant_id=identity.tenant_id,
+            lead_id=lead_id,
+            new_status=body.status.value,
         )
-        for lead in leads
-    ]
+    except svc.LeadNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="lead not found"
+        ) from exc
+    except svc.InvalidLeadTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    await db.commit()
+    return _lead_response(lead)
 
 
 # ---------------------------------------------------------------------------

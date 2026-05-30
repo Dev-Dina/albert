@@ -175,6 +175,7 @@ class LeadRow:
     status: str
     created_at: str
     conversation_id: str | None
+    status_changed_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -601,6 +602,17 @@ class BackendClient:
         self._raise_for_status(r)
         return [_lead_from_json(item) for item in r.json()]
 
+    def update_lead_status(self, lead_id: str, *, status: str) -> LeadRow:
+        """Advance a lead's status (feature 007, US2). 409 on a disallowed move."""
+        with self._client() as c:
+            r = c.patch(
+                f"/api/v1/admin/leads/{lead_id}",
+                headers=self._headers(),
+                json={"status": status},
+            )
+        self._raise_for_status(r)
+        return _lead_from_json(r.json())
+
     def list_members(self) -> list[MemberRow]:
         with self._client() as c:
             r = c.get("/api/v1/admin/members", headers=self._headers())
@@ -753,6 +765,7 @@ def _lead_from_json(item: dict[str, Any]) -> LeadRow:
         status=item.get("status") or "new",
         created_at=str(item.get("created_at") or ""),
         conversation_id=str(item["conversation_id"]) if item.get("conversation_id") else None,
+        status_changed_at=str(item["status_changed_at"]) if item.get("status_changed_at") else None,
     )
 
 
