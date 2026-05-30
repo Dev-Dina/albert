@@ -21,3 +21,19 @@ def test_sensitive_attribute_names_are_rejected() -> None:
     assert not tracing.is_safe_span_attribute("cookie", "session=secret")
     assert not tracing.is_safe_span_attribute("safe_note", "api_key=sk-fake000000000000")
     assert tracing.is_safe_span_attribute("text_length", 42)
+
+
+def test_tool_name_attribute_is_safe() -> None:
+    # The agent's tool-call span attribute must pass the policy (no forbidden
+    # substring; "token" is not inside "tool_name").
+    assert tracing.is_safe_span_attribute("tool_name", "rag_search")
+    assert tracing.is_safe_span_attribute("tool_name", "capture_lead")
+    assert tracing.is_safe_span_attribute("tool_name", "escalate")
+
+
+def test_tool_span_is_a_noop_context_manager_when_disabled() -> None:
+    # With tracing disabled (global no-op provider), tool_span must still be a
+    # usable context manager that yields a (non-recording) span and never raises.
+    with tracing.tool_span("rag_search") as span:
+        assert span is not None
+        assert span.is_recording() is False

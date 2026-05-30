@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi import FastAPI
@@ -59,6 +61,22 @@ def safe_set_span_attribute(name: str, value: Any) -> None:
     if not is_safe_span_attribute(name, value):
         return
     trace.get_current_span().set_attribute(name, value)
+
+
+@contextmanager
+def tool_span(tool_name: str) -> Iterator[Any]:
+    """Start a child span for an agent tool call so it is visible in Jaeger.
+
+    A no-op when tracing is disabled (the global no-op tracer provider yields a
+    non-recording span). Records ONLY the tool name (``tool_name`` attribute,
+    via the safe-attribute policy) — never tool args or results, which may carry
+    visitor PII.
+    """
+    tracer = trace.get_tracer("albert.backend")
+    with tracer.start_as_current_span(f"tool:{tool_name}") as span:
+        if span.is_recording() and is_safe_span_attribute("tool_name", tool_name):
+            span.set_attribute("tool_name", tool_name)
+        yield span
 
 
 def _server_request_hook(span: Any, scope: dict[str, Any]) -> None:
