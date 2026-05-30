@@ -1,10 +1,11 @@
 """Origin + CSP hardening tests for US2.
 
-Covers:
-- T045: token exchange from a disallowed origin → 403 with an opaque body.
+Covers (updated for feature 006 / Approach A):
+- T045 → C-S1: token exchange from a NON-allowlisted origin now SUCCEEDS (the
+  allowlist governs embedding, not token exchange); the unknown-widget 403 with
+  an opaque body is retained as the anti-enumeration control.
 - T046: per-tenant `Content-Security-Policy: frame-ancestors …` on /widget/embed.html.
-- T059b: origin removed from the allowlist → an existing-but-unexpired token is
-  rejected (401) on the next chat call (SC-008 / "token replay after origin change").
+- T059b: TTL-bounded revocation — see test_widget_origin_csp Phase 5 tests.
 """
 
 from __future__ import annotations
@@ -131,21 +132,21 @@ def teardown_function() -> None:
     app.dependency_overrides.clear()
 
 
-def test_token_exchange_from_attacker_origin_returns_403_opaque_body() -> None:
-    """T045: attacker origin → 403; body identical to widget-not-found / disabled."""
+def test_token_exchange_from_non_allowlisted_origin_now_succeeds() -> None:
+    """C-S1 (Approach A): a non-allowlisted origin is no longer rejected at
+    /session. The customer allowlist governs embedding (frame-ancestors), not
+    token exchange; tenant identity still comes solely from the widget lookup,
+    so a token minted here is scoped to the resolved tenant regardless of the
+    request Origin. (Previously this returned an opaque 403.)
+    """
     _setup_session_dependencies([_ALLOWED_ORIGIN_A])
     response = client.post(
         "/api/v1/widget/session",
         headers={"Origin": _ATTACKER_ORIGIN},
         json={"widget_id": _PUBLIC_WIDGET_ID},
     )
-    assert response.status_code == 403
-    body = response.json()
-    # Opaque body: a single uniform "detail" string, no leak of which check failed.
-    assert "detail" in body
-    assert body["detail"] == "forbidden"
-    for needle in ("origin", "allowlist", "disabled", "not found", "widget"):
-        assert needle.lower() not in str(body).lower(), body
+    assert response.status_code == 200, response.text
+    assert response.json().get("session_token")
 
 
 def test_token_exchange_for_unknown_widget_returns_same_opaque_403() -> None:
@@ -175,65 +176,14 @@ def test_embed_html_emits_per_tenant_frame_ancestors() -> None:
     assert response.headers.get("x-frame-options")
 
 
-def test_chat_rejects_token_after_origin_removed_from_allowlist() -> None:
-    """T059b / SC-008: an unexpired token from a now-removed origin is 401."""
-    from app.api import deps
-    from app.clients import vault_client
-    from app.db.session import get_db
-    from app.repositories import allowed_origin_repo
-
-    token = mint_widget_session_token(
-        tenant_id=_TENANT_ID,
-        widget_id=_WIDGET_ID,
-        public_widget_id=_PUBLIC_WIDGET_ID,
-        origin=_ALLOWED_ORIGIN_A,
-        key_version=1,
-        key_material=_KEY_MATERIAL,
-    )
-
-    class _FakeSession:
-        async def execute(self, *args, **kwargs):
-            class _R:
-                def scalar_one_or_none(self_inner):
-                    class _Active:
-                        version = 1
-                    return _Active()
-            return _R()
-
-    async def _fake_get_db():
-        yield _FakeSession()
-
-    async def _fake_read_key(tenant_id):
-        return _KEY_MATERIAL
-
-    async def _fake_exists_for_tenant(session, tenant_id, origin):
-        # Origin has just been removed.
-        return False
-
-    app.dependency_overrides[get_db] = _fake_get_db
-    vault_client.read_tenant_widget_signing_key = _fake_read_key  # type: ignore[assignment]
-    allowed_origin_repo.exists_for_tenant = _fake_exists_for_tenant  # type: ignore[assignment]
-
-    async def _fake_active_key(db, tenant_id):
-        class _Active:
-            version = 1
-        return _Active()
-
-    deps._fetch_active_key_version = _fake_active_key  # type: ignore[assignment]
-
-    response = client.post(
-        "/api/v1/widget/chat",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Origin": _ALLOWED_ORIGIN_A,
-        },
-        json={"message": "hi"},
-    )
-    assert response.status_code == 401
-
-
-def test_chat_succeeds_when_origin_still_on_allowlist() -> None:
-    """T059b companion: same token + allowed origin → 200 (no regression)."""
+def test_chat_still_succeeds_after_origin_removed_until_token_expiry() -> None:
+    """T059b → C-C3 (Approach A, TTL-bounded revocation): after the admin removes
+    the origin from the allowlist, an existing unexpired token STILL authorizes
+    chat (200). Immediate revocation is NOT expected on /chat — embedding is
+    blocked at embed.html (per-tenant frame-ancestors) instead, and the token's
+    own TTL bounds the residual exposure. ``exists_for_tenant`` returns False
+    here (origin removed) and is no longer consulted on the chat path.
+    """
     from app.api import deps
     from app.clients import vault_client
     from app.db.session import get_db
@@ -262,7 +212,8 @@ def test_chat_succeeds_when_origin_still_on_allowlist() -> None:
         return _KEY_MATERIAL
 
     async def _fake_exists_for_tenant(session, tenant_id, origin):
-        return origin == _ALLOWED_ORIGIN_A
+        # Origin has just been removed from the allowlist.
+        return False
 
     async def _fake_active_key(db, tenant_id):
         class _Active:
@@ -272,6 +223,84 @@ def test_chat_succeeds_when_origin_still_on_allowlist() -> None:
     app.dependency_overrides[get_db] = _fake_get_db
     vault_client.read_tenant_widget_signing_key = _fake_read_key  # type: ignore[assignment]
     allowed_origin_repo.exists_for_tenant = _fake_exists_for_tenant  # type: ignore[assignment]
+    deps._fetch_active_key_version = _fake_active_key  # type: ignore[assignment]
+
+    class _FakeAgentDb:
+        async def execute(self, *args, **kwargs):
+            return None
+
+        async def commit(self):
+            return None
+
+    async def _null_db_gen(*args, **kwargs):
+        yield _FakeAgentDb()
+
+    _mock_agent_result = AgentResult(reply="ok", escalated=False, iterations_used=1)
+    _faq_decision = RouterDecision(
+        action="agent", label="faq_rag", confidence=0.9, routed_to="agent"
+    )
+    app.state.redis = AsyncMock()
+    app.state.redis.get = AsyncMock(return_value=None)
+    app.state.redis.setex = AsyncMock()
+    app.state.llm = AsyncMock()
+    app.state.embedder = AsyncMock()
+    app.state.reranker = AsyncMock()
+
+    with (
+        _patch("app.api.routes.widget_chat._guardrails_check", new=AsyncMock(return_value=True)),
+        _patch("app.api.routes.widget_chat.router_service.classify_and_route", new=AsyncMock(return_value=_faq_decision)),
+        _patch("app.api.routes.widget_chat.get_tenant_db", new=_null_db_gen),
+        _patch("app.api.routes.widget_chat.run_agent", new=AsyncMock(return_value=_mock_agent_result)),
+    ):
+        response = client.post(
+            "/api/v1/widget/chat",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Origin": _ALLOWED_ORIGIN_A,
+            },
+            json={"message": "hi"},
+        )
+    assert response.status_code == 200, response.text
+
+
+def test_chat_succeeds_with_valid_token_regardless_of_allowlist() -> None:
+    """T059b companion → C-C1: a valid unexpired token authorizes chat (200)
+    independent of the customer allowlist — the chat path never consults
+    ``exists_for_tenant`` (whatever it would return), so authorization rests on
+    the token alone (previously this test asserted allowlist membership)."""
+    from app.api import deps
+    from app.clients import vault_client
+    from app.db.session import get_db
+
+    token = mint_widget_session_token(
+        tenant_id=_TENANT_ID,
+        widget_id=_WIDGET_ID,
+        public_widget_id=_PUBLIC_WIDGET_ID,
+        origin=_ALLOWED_ORIGIN_A,
+        key_version=1,
+        key_material=_KEY_MATERIAL,
+    )
+
+    class _FakeSession:
+        async def execute(self, *args, **kwargs):
+            class _R:
+                def scalar_one_or_none(self_inner):
+                    return None
+            return _R()
+
+    async def _fake_get_db():
+        yield _FakeSession()
+
+    async def _fake_read_key(tenant_id):
+        return _KEY_MATERIAL
+
+    async def _fake_active_key(db, tenant_id):
+        class _Active:
+            version = 1
+        return _Active()
+
+    app.dependency_overrides[get_db] = _fake_get_db
+    vault_client.read_tenant_widget_signing_key = _fake_read_key  # type: ignore[assignment]
     deps._fetch_active_key_version = _fake_active_key  # type: ignore[assignment]
 
     class _FakeAgentDb:

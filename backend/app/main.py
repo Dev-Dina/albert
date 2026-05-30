@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 
-from app.api.middleware.widget_cors import WidgetCorsMiddleware
 from app.api.routes.admin_members_and_leads import router as admin_members_and_leads_router
 from app.api.routes.admin_widgets import router as admin_widgets_router
 from app.api.routes.auth import router as auth_router
@@ -25,7 +24,10 @@ install_redaction_filter()
 app = FastAPI(title="Albert Backend", lifespan=lifespan)
 app.add_middleware(RequestIdMiddleware)
 setup_tracing(app)
-app.add_middleware(WidgetCorsMiddleware)
+# Approach A (feature 006): the per-tenant WidgetCorsMiddleware was removed. The
+# widget API surface emits no Access-Control-Allow-Origin, so the browser
+# same-origin policy blocks cross-origin reads; embedding is bounded by the
+# per-tenant frame-ancestors CSP on embed.html and tenant identity by the token.
 
 app.include_router(health_router)
 app.include_router(status_router)

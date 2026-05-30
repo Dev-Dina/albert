@@ -71,13 +71,13 @@ async def get_widget_session(
     Sets ``app.current_tenant`` on the request's DB session so all subsequent
     tenant-scoped queries are gated by RLS for the lifetime of the request.
     Returns 401 on any failure; NEVER leaks why (signature mismatch vs.
-    expiry vs. rotation vs. origin re-check failure).
+    expiry vs. rotation).
 
-    Origin re-check (T059a / SC-008): after the token verifies, the request's
-    Origin header is checked against the tenant's CURRENT
-    ``widget_allowed_origins``. This is the path that revokes a token when
-    the admin removes the origin from the allowlist mid-session, without
-    waiting for natural token expiry.
+    Approach A (feature 006): the request Origin is NOT re-checked against the
+    customer allowlist. Tenant identity comes solely from the verified token;
+    the allowlist governs embedding only (the per-tenant ``frame-ancestors`` CSP
+    on ``embed.html``). Mid-session allowlist changes are TTL-bounded — an
+    already-issued token keeps authorizing chat until it expires.
     """
     token = _read_bearer(request)
 
@@ -92,15 +92,13 @@ async def get_widget_session(
     except (JWTError, KeyError, ValueError, TypeError) as exc:
         raise _widget_credentials_exc from exc
 
-    from app.repositories import allowed_origin_repo
-
-    # The signing-key-version and allowed-origin reads below hit tenant-scoped
-    # tables under FORCE ROW LEVEL SECURITY. The runtime role is non-superuser /
-    # NOBYPASSRLS, so they must run with app.current_tenant set or RLS filters
-    # every row (→ spurious 401). Scope to the token-claimed tenant: an attacker
-    # claiming another tenant only loads THAT tenant's key and fails signature
-    # verification below, so this is safe and leaks nothing cross-tenant. The
-    # context stays set through the yield so the request runs tenant-scoped.
+    # The signing-key-version read below hits tenant-scoped tables under FORCE
+    # ROW LEVEL SECURITY. The runtime role is non-superuser / NOBYPASSRLS, so it
+    # must run with app.current_tenant set or RLS filters every row (→ spurious
+    # 401). Scope to the token-claimed tenant: an attacker claiming another
+    # tenant only loads THAT tenant's key and fails signature verification below,
+    # so this is safe and leaks nothing cross-tenant. The context stays set
+    # through the yield so the request runs tenant-scoped.
     async with tenant_context(db, tenant_id):
         active = await _fetch_active_key_version(db, tenant_id)
         if active is None or active.version != kvr_claim:
@@ -119,18 +117,8 @@ async def get_widget_session(
         except WidgetTokenError as exc:
             raise _widget_credentials_exc from exc
 
-        # Origin re-check (T059a). The token's own ``org`` claim is informational;
-        # we re-evaluate against the live allowlist so an admin removing an
-        # origin invalidates outstanding tokens from that origin on the very next
-        # request (SC-008). Missing Origin header → 401 (uniform refusal).
-        origin = request.headers.get("origin")
-        if not origin:
-            raise _widget_credentials_exc
-
-        origin_ok = await allowed_origin_repo.exists_for_tenant(
-            db, claims.tenant_id, origin
-        )
-        if not origin_ok:
-            raise _widget_credentials_exc
-
+        # Approach A: no request-Origin re-check. The token's ``org`` claim is
+        # informational only; tenant identity is the verified ``tnt`` claim. The
+        # request runs under the token's tenant context for the lifetime of the
+        # yield.
         yield claims
