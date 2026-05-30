@@ -202,8 +202,11 @@ class EscalationRow:
     reason: str
     summary: str
     conversation_status: str
+    status: str
     created_at: str
     updated_at: str
+    resolved_at: str | None = None
+    resolved_by: str | None = None
 
 
 class BackendClient:
@@ -729,11 +732,13 @@ class BackendClient:
 
     # -- tenant-admin: escalations (feature 007) ---------------------------
 
-    def list_escalations(self, *, limit: int = 50) -> list[EscalationRow]:
+    def list_escalations(
+        self, *, status: str | None = None, limit: int = 50
+    ) -> list[EscalationRow]:
         with self._client() as c:
             r = c.get(
                 "/api/v1/admin/escalations",
-                params={"limit": limit},
+                params=_drop_none({"status": status, "limit": limit}),
                 headers=self._headers(),
             )
         self._raise_for_status(r)
@@ -744,6 +749,20 @@ class BackendClient:
             r = c.get(
                 f"/api/v1/admin/escalations/{conversation_id}",
                 headers=self._headers(),
+            )
+        self._raise_for_status(r)
+        return _escalation_from_json(r.json())
+
+    def set_escalation_status(
+        self, conversation_id: str, *, status: str
+    ) -> EscalationRow:
+        """Resolve or reopen an escalation (feature 008). 404 if not this
+        tenant's escalation; 422 on an invalid status value."""
+        with self._client() as c:
+            r = c.patch(
+                f"/api/v1/admin/escalations/{conversation_id}",
+                headers=self._headers(),
+                json={"status": status},
             )
         self._raise_for_status(r)
         return _escalation_from_json(r.json())
@@ -826,8 +845,11 @@ def _escalation_from_json(item: dict[str, Any]) -> EscalationRow:
         reason=item.get("reason") or "",
         summary=item.get("summary") or "",
         conversation_status=item.get("conversation_status") or "",
+        status=item.get("status") or "open",
         created_at=str(item.get("created_at") or ""),
         updated_at=str(item.get("updated_at") or ""),
+        resolved_at=str(item["resolved_at"]) if item.get("resolved_at") else None,
+        resolved_by=str(item["resolved_by"]) if item.get("resolved_by") else None,
     )
 
 

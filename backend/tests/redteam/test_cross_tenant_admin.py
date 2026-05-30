@@ -106,9 +106,20 @@ def test_tenant_b_cannot_reach_tenant_a_records() -> None:
             f"/api/v1/admin/leads/{LEAD_A}", json={"status": "contacted"}
         ).status_code == 404
 
-        # Escalations
+        # Escalations (read + resolve/reopen)
         assert client.get(f"/api/v1/admin/escalations/{CONV_A}").status_code == 404
+        assert client.patch(
+            f"/api/v1/admin/escalations/{CONV_A}", json={"status": "resolved"}
+        ).status_code == 404
         assert client.get("/api/v1/admin/escalations").json() == []
+
+        # ...and Tenant A's escalation was NOT mutated by Tenant B's attempt.
+        app.dependency_overrides[require_admin_identity] = lambda: AdminIdentity(
+            user_id=uuid.uuid4(), tenant_id=TENANT_A
+        )
+        a_view = client.get(f"/api/v1/admin/escalations/{CONV_A}").json()
+        assert a_view["status"] == "open"
+        assert a_view["resolved_by"] is None
     finally:
         _teardown()
 

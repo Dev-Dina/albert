@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.cost_event import CostEvent
+from app.pricing import compute_cost_usd
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ async def record_cost_event(
     model: str,
     input_tokens: int = 0,
     output_tokens: int = 0,
-    cost_usd: Decimal = Decimal("0"),
+    cost_usd: Decimal | None = None,
     conversation_id: uuid.UUID | None = None,
 ) -> CostEvent:
     """Insert a cost_events row for a single LLM or embedding call.
@@ -44,7 +45,14 @@ async def record_cost_event(
     calling service), never from client input.
 
     call_type is one of: "llm", "embedding".
+
+    ``cost_usd`` is derived from ``model`` and the token counts via
+    ``app.pricing`` when the caller does not pass an explicit value, so every
+    recorded row carries a real dollar amount. Pass an explicit ``cost_usd`` to
+    override (e.g. tests, or a provider that returns billed cost directly).
     """
+    if cost_usd is None:
+        cost_usd = compute_cost_usd(model, input_tokens, output_tokens)
     event = CostEvent(
         id=uuid.uuid4(),
         tenant_id=tenant_id,

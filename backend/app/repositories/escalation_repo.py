@@ -61,21 +61,53 @@ async def list_for_tenant(
     session: AsyncSession,
     *,
     tenant_id: uuid.UUID,
+    status: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[tuple[Escalation, str]]:
     """Return this tenant's escalations (newest updated_at first) with the
-    joined conversation status, as ``[(escalation, conversation_status), ...]``."""
+    joined conversation status, as ``[(escalation, conversation_status), ...]``.
+
+    Always filters ``Escalation.tenant_id == tenant_id``; the optional
+    ``status`` (``open`` / ``resolved``) narrows *within* the tenant — tenant
+    scope is non-negotiable.
+    """
     query = (
         select(Escalation, Conversation.status)
         .join(Conversation, Conversation.id == Escalation.conversation_id)
         .where(Escalation.tenant_id == tenant_id)
-        .order_by(Escalation.updated_at.desc())
-        .limit(limit)
-        .offset(offset)
     )
+    if status is not None:
+        query = query.where(Escalation.status == status)
+    query = query.order_by(Escalation.updated_at.desc()).limit(limit).offset(offset)
     result = await session.execute(query)
     return [(row[0], row[1]) for row in result.all()]
+
+
+async def set_status(
+    session: AsyncSession,
+    *,
+    escalation: Escalation,
+    status: str,
+    resolved_by: uuid.UUID,
+) -> Escalation:
+    """Set the escalation's status and maintain the resolve audit trail.
+
+    On ``resolved``: stamp ``resolved_at`` (now) and ``resolved_by`` (the acting
+    admin). On ``open`` (reopen): clear both back to ``None``. Bumps
+    ``updated_at``. Does NOT touch the linked conversation's status (decoupled,
+    FR-005) and does NOT commit — the caller owns the transaction.
+    """
+    escalation.status = status
+    if status == "resolved":
+        escalation.resolved_at = datetime.now(timezone.utc)
+        escalation.resolved_by = resolved_by
+    else:
+        escalation.resolved_at = None
+        escalation.resolved_by = None
+    escalation.updated_at = datetime.now(timezone.utc)
+    await session.flush()
+    return escalation
 
 
 async def get_for_tenant(
