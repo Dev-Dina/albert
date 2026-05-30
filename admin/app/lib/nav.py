@@ -12,7 +12,7 @@ for ``st.navigation`` in ``main.py``. Both derive from the same spec tables, so
 the counts can never drift:
 
 * ``tenant_manager`` -> 6 entries (Overview + 5 platform pages)
-* ``tenant_admin``   -> 8 entries (Overview + 7 tenant pages)
+* ``tenant_admin``   -> 9 entries (Overview + 8 tenant pages)
 * ``other``          -> 0 entries (wrong-role view; no navigation)
 """
 
@@ -42,9 +42,10 @@ _PLATFORM_PAGES: tuple[NavPage, ...] = (
     NavPage("Managers", ":material/admin_panel_settings:", "pages_platform/managers.py", "managers"),
 )
 
-# Tenant surface (tenant_admin) — Overview landing + 7 capability pages.
+# Tenant surface (tenant_admin) — Overview landing + 8 capability pages.
 _TENANT_PAGES: tuple[NavPage, ...] = (
     NavPage("Overview", ":material/dashboard:", "pages_tenant/overview.py", "overview", default=True),
+    NavPage("Content", ":material/article:", "pages_tenant/content.py", "content"),
     NavPage("Widgets", ":material/widgets:", "pages_tenant/widgets.py", "widgets"),
     NavPage("Allowed Origins", ":material/shield:", "pages_tenant/allowed_origins.py", "allowed-origins"),
     NavPage("Guardrails", ":material/policy:", "pages_tenant/guardrails.py", "guardrails"),

@@ -79,8 +79,8 @@ async def ingest_tenant_content(
     repo = ChunkRepo(db)
     result = IngestionResult(tenant_id=tenant_id, pages_processed=0, parent_chunks_written=0, child_chunks_written=0)
 
-    # Fetch content pages — Owner A's repo stub until CMSContent model is delivered.
-    pages = await _fetch_content_pages(tenant_uuid, content_ids)
+    # Fetch published CMS pages for this tenant (feature 007 — replaces the stub).
+    pages = await _fetch_content_pages(db, tenant_uuid, content_ids)
 
     for page in pages:
         content_id = page["content_id"]
@@ -180,13 +180,25 @@ async def ingest_tenant_content(
 
 
 async def _fetch_content_pages(
+    db: AsyncSession,
     tenant_id: uuid.UUID,
     content_ids: list[str] | None,
 ) -> list[dict]:
-    """Stub for Owner A's content_repo.
+    """Fetch this tenant's PUBLISHED CMS pages as ``[{content_id, body}]``.
 
-    Returns empty list until CMSContent model and repo are delivered.
-    Replace with: await content_repo.get_pages(tenant_id=tenant_id, content_ids=content_ids)
+    Reads via ``cms_repo.get_published_pages``; unpublished pages are excluded so
+    they are never indexed/retrievable. ``tenant_id`` is the injected parameter —
+    never read from a content row.
     """
-    logger.debug("ingestion._fetch_content_pages tenant=%s (stub — returning [])", tenant_id)
-    return []
+    from app.repositories import cms_repo  # local import avoids import cycles
+
+    uuid_ids: list[uuid.UUID] | None = None
+    if content_ids:
+        uuid_ids = [cid if isinstance(cid, uuid.UUID) else uuid.UUID(str(cid)) for cid in content_ids]
+    pages = await cms_repo.get_published_pages(
+        db, tenant_id=tenant_id, content_ids=uuid_ids
+    )
+    logger.debug(
+        "ingestion._fetch_content_pages tenant=%s pages=%d", tenant_id, len(pages)
+    )
+    return pages

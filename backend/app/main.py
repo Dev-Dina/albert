@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.routes.admin_cms import router as admin_cms_router
 from app.api.routes.admin_members_and_leads import router as admin_members_and_leads_router
 from app.api.routes.admin_widgets import router as admin_widgets_router
 from app.api.routes.auth import router as auth_router
@@ -37,6 +38,7 @@ app.include_router(widget_session_router)
 app.include_router(widget_chat_router)
 app.include_router(widget_loader_router)
 app.include_router(admin_widgets_router)
+app.include_router(admin_cms_router)
 app.include_router(admin_members_and_leads_router)
 app.include_router(tenancy_router)
 app.include_router(chat_router)
