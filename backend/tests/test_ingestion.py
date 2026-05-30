@@ -3,12 +3,22 @@
 All DB and API calls are mocked — no real database or API keys needed.
 """
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.adapters.embedder import EmbedError
-from app.services.ingestion import ingest_tenant_content, _split_into_chunks
+from app.db.base import Base
+from app.db.models.cms_page import CmsPage
+from app.db.models.tenant import Tenant
+from app.services import cms_service
+from app.services.ingestion import (
+    _fetch_content_pages,
+    _split_into_chunks,
+    ingest_tenant_content,
+)
 
 
 # --- chunker unit tests ---
@@ -145,8 +155,6 @@ async def test_idempotency_deletes_existing_chunks_before_writing() -> None:
 async def test_parents_flushed_before_children_written() -> None:
     """Regression: parents must be flushed before children are written, else the
     child_chunks_parent_id_fkey FK is violated (no ORM relationship() orders them)."""
-    from unittest.mock import Mock
-
     tenant_id = str(uuid.uuid4())
     content_id = uuid.uuid4()
     db = AsyncMock()
@@ -178,14 +186,6 @@ async def test_parents_flushed_before_children_written() -> None:
 
 
 # --- feature 007: _fetch_content_pages reads published CMS pages -------------
-
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
-
-from app.db.base import Base
-from app.db.models.cms_page import CmsPage
-from app.db.models.tenant import Tenant
-from app.services.ingestion import _fetch_content_pages
 
 
 @pytest.mark.asyncio
@@ -228,10 +228,6 @@ async def test_fetch_content_pages_returns_published_only_and_tenant_scoped() ->
 @pytest.mark.asyncio
 async def test_remove_page_chunks_deletes_chunks_for_content() -> None:
     """Delete path removes the page's chunks (content_id + tenant scoped)."""
-    from unittest.mock import AsyncMock, patch
-
-    from app.services import cms_service
-
     tenant = str(uuid.uuid4())
     page = str(uuid.uuid4())
     fake_repo = AsyncMock()
