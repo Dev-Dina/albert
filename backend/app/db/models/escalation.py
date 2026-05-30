@@ -30,6 +30,18 @@ class Escalation(Base):
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Two-state lifecycle (feature 008): "open" (default) | "resolved". Valid
+    # values are enforced in the app layer (Pydantic enum + escalation_lifecycle);
+    # there is no DB CHECK constraint (see migration 0016 / research.md D3).
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, default="open", server_default="open"
+    )
+    # Light audit trail, populated on resolve and cleared on reopen. ``resolved_by``
+    # is the acting admin's user_id (same tenant), stored without a FK (research D1).
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(GUID, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -383,6 +383,91 @@ def test_tenant_admin_methods_reject_409_and_404() -> None:
 
 def test_tenant_admin_methods_take_no_tenant_id_argument() -> None:
     """FR-031: the tenant-admin methods must derive scope from the JWT only."""
-    for name in ("list_leads", "list_members", "invite_member", "remove_member"):
+    for name in (
+        "list_leads", "list_members", "invite_member", "remove_member",
+        "list_escalations", "set_escalation_status",
+    ):
         params = inspect.signature(getattr(BackendClient, name)).parameters
         assert "tenant_id" not in params, f"{name} must not accept a tenant_id argument"
+
+
+# ---------------------------------------------------------------------------
+# Escalation resolve/reopen methods — feature 008
+# ---------------------------------------------------------------------------
+
+
+def test_list_escalations_passes_status_filter_and_decodes() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["params"] = dict(request.url.params)
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "conversation_id": "11111111-1111-1111-1111-111111111111",
+                    "reason": "needs a human",
+                    "summary": "ctx",
+                    "conversation_status": "escalated",
+                    "status": "open",
+                    "resolved_at": None,
+                    "resolved_by": None,
+                    "created_at": "2026-05-01T00:00:00Z",
+                    "updated_at": "2026-05-01T00:00:00Z",
+                }
+            ],
+        )
+
+    client = _client(handler, token="tok")
+    rows = client.list_escalations(status="open", limit=200)
+    assert captured["path"] == "/api/v1/admin/escalations"
+    assert captured["params"]["status"] == "open"
+    assert rows[0].status == "open"
+    assert rows[0].resolved_by is None
+
+
+def test_set_escalation_status_patches_status_and_decodes() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "conversation_id": "11111111-1111-1111-1111-111111111111",
+                "reason": "needs a human",
+                "summary": "ctx",
+                "conversation_status": "escalated",
+                "status": "resolved",
+                "resolved_at": "2026-05-30T10:00:00Z",
+                "resolved_by": "99999999-9999-9999-9999-999999999999",
+                "created_at": "2026-05-01T00:00:00Z",
+                "updated_at": "2026-05-30T10:00:00Z",
+            },
+        )
+
+    client = _client(handler, token="tok")
+    row = client.set_escalation_status(
+        "11111111-1111-1111-1111-111111111111", status="resolved"
+    )
+    assert captured["method"] == "PATCH"
+    assert captured["path"] == "/api/v1/admin/escalations/11111111-1111-1111-1111-111111111111"
+    assert captured["body"] == {"status": "resolved"}
+    assert row.status == "resolved"
+    assert row.resolved_by == "99999999-9999-9999-9999-999999999999"
+    assert row.resolved_at is not None
+
+
+def test_set_escalation_status_404_raises_backend_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "escalation not found"})
+
+    client = _client(handler, token="tok")
+    with pytest.raises(BackendError) as exc_info:
+        client.set_escalation_status(
+            "11111111-1111-1111-1111-111111111111", status="resolved"
+        )
+    assert exc_info.value.status_code == 404
