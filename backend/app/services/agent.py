@@ -12,6 +12,7 @@ from app.adapters.embedder import EmbedderAdapter
 from app.adapters.llm import LLMAdapter
 from app.adapters.reranker import RerankerAdapter
 from app.core.config import settings
+from app.core.tracing import tool_span
 from app.cost import record_cost_event
 from app.tools.capture_lead import CAPTURE_LEAD_TOOL, capture_lead
 from app.tools.escalate import ESCALATE_TOOL, escalate
@@ -107,21 +108,31 @@ async def run_agent(
         if choice.finish_reason == "stop":
             reply_text = choice.message.content or ""
             if not reply_text.strip():
-                # Gemini occasionally returns a "stop" with no text right after a
-                # tool call (e.g. after rag_search). Returning "" would fail the
-                # output guardrail's min_length check and surface as a hard error,
-                # so retry the same turn once — replies with text are unaffected.
+                # flash-lite sometimes returns a "stop" with no text right after a
+                # tool result (most often when the answer-bearing chunk isn't near
+                # the top of the retrieved context). Re-sending the identical
+                # request is deterministic — it stays empty. Instead force a final
+                # synthesis turn WITHOUT tools and with an explicit instruction, so
+                # the model must produce text from the information already gathered
+                # rather than escalating with the answer in hand.
                 logger.warning(
-                    "agent.empty_stop tenant=%s conv=%s iter=%d — retrying once",
+                    "agent.empty_stop tenant=%s conv=%s iter=%d — forcing no-tools synthesis",
                     tenant_id, conversation_id, iterations,
                 )
-                retry = await llm.chat(
+                synthesis = await llm.chat(
                     tenant_id=tenant_id,
-                    messages=messages,
-                    tools=TOOL_LIST,
+                    messages=messages + [{
+                        "role": "user",
+                        "content": (
+                            "Answer the visitor's question directly and concisely "
+                            "using the information gathered above. If that "
+                            "information is insufficient, say so briefly."
+                        ),
+                    }],
+                    tools=None,  # force a plain-text completion (no further tool calls)
                     max_tokens=settings.agent_max_tokens_per_turn,
                 )
-                reply_text = retry.choices[0].message.content or ""
+                reply_text = synthesis.choices[0].message.content or ""
             if reply_text.strip():
                 return AgentResult(
                     reply=reply_text,
@@ -145,21 +156,27 @@ async def run_agent(
                     "agent.tool_call tenant=%s tool=%s", tenant_id, tool_name
                 )
 
-                result = await _dispatch_tool(
-                    tool_name=tool_name,
-                    tool_args=tool_args,
-                    tenant_id=tenant_id,
-                    conversation_id=conversation_id,
-                    db=db,
-                    redis=redis,
-                    embedder=embedder,
-                    reranker=reranker,
-                )
+                with tool_span(tool_name):
+                    result = await _dispatch_tool(
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        tenant_id=tenant_id,
+                        conversation_id=conversation_id,
+                        db=db,
+                        redis=redis,
+                        embedder=embedder,
+                        reranker=reranker,
+                    )
 
                 messages.append(
                     {
+                        # ``name`` MUST be the called tool's name: Gemini binds a
+                        # function_response to its function_call by name, and a
+                        # mismatch (e.g. the literal "tool") makes the model drop
+                        # the result. See app.adapters.llm tool-message mapping.
                         "role": "tool",
                         "tool_call_id": tc.id,
+                        "name": tool_name,
                         "content": json.dumps(result),
                     }
                 )
