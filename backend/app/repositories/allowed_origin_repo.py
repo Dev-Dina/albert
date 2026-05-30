@@ -54,6 +54,12 @@ async def remove(session: AsyncSession, origin_id: uuid.UUID) -> bool:
 async def exists_for_tenant(
     session: AsyncSession, tenant_id: uuid.UUID, origin: str
 ) -> bool:
+    """Whether ``origin`` is on ``tenant_id``'s allowlist.
+
+    Retained for future use / admin tooling. As of feature 006 (Approach A) the
+    request-time session and chat paths no longer call this — the customer
+    allowlist governs embedding only (frame-ancestors), not token exchange.
+    """
     result = await session.execute(
         select(WidgetAllowedOrigin.id).where(
             WidgetAllowedOrigin.tenant_id == tenant_id,

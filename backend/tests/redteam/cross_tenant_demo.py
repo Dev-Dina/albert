@@ -5,7 +5,9 @@ and asserts each is rejected. Importable from quickstart step 8 and from the
 CI redteam_cross_tenant eval gate (T083).
 
 Attack inventory:
-1. Token exchange from a disallowed origin (Origin: https://attacker.test).
+1. Token exchange from a foreign/attacker origin must not pivot tenants — the
+   minted token stays scoped to the widget's own tenant (Approach A: origin is
+   no longer a request-time gate; it governs embedding via frame-ancestors).
 2. Chat request with a copied widget_id and a forged/stale token via curl.
 3. Chat request with a valid Tenant A token AND a foreign `tenant_id` field
    in the body.
@@ -90,17 +92,36 @@ def _wire_isolated_app() -> TestClient:
     return TestClient(app)
 
 
-def _attack_disallowed_origin(client: TestClient) -> AttackResult:
+def _attack_origin_cannot_pivot_tenant(client: TestClient) -> AttackResult:
+    """Under Approach A (feature 006) the request Origin is no longer a
+    request-time gate at /session — embedding is controlled by frame-ancestors
+    instead. The cross-tenant property that MUST still hold: a session obtained
+    from ANY origin is scoped to the widget's own tenant (Tenant A); the Origin
+    can never be used to pivot to another tenant.
+    """
+    from jose import jwt as _jwt
+
     response = client.post(
         "/api/v1/widget/session",
         headers={"Origin": _ATTACKER_ORIGIN},
         json={"widget_id": _PUBLIC_ID_A},
     )
-    rejected = response.status_code == 403
+    if response.status_code == 200:
+        token = response.json().get("session_token", "")
+        claims = _jwt.get_unverified_claims(token) if token else {}
+        rejected = (
+            claims.get("tnt") == str(_TENANT_A)
+            and str(_TENANT_B) not in response.text
+        )
+        detail = f"status=200 token_tenant={claims.get('tnt')}"
+    else:
+        # A real stack may still refuse for unrelated reasons; refusal is safe too.
+        rejected = response.status_code in (401, 403)
+        detail = f"status={response.status_code}"
     return AttackResult(
-        name="disallowed_origin_token_exchange",
+        name="origin_cannot_pivot_tenant",
         rejected=rejected,
-        detail=f"status={response.status_code}",
+        detail=detail,
     )
 
 
@@ -163,7 +184,7 @@ def run_all() -> list[AttackResult]:
     client = _wire_isolated_app()
     try:
         return [
-            _attack_disallowed_origin(client),
+            _attack_origin_cannot_pivot_tenant(client),
             _attack_forged_token(client),
             _attack_body_tenant_id_injection(client),
         ]

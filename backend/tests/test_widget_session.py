@@ -20,6 +20,9 @@ _TENANT_ID = uuid.uuid4()
 _WIDGET_ID = uuid.uuid4()
 _PUBLIC_WIDGET_ID = "Acm" + "X" * 19  # 22 base62 chars
 _ORIGIN = "http://localhost:8080"
+# The backend origin a real browser attaches when the widget iframe is served
+# from the backend. It is intentionally NOT a customer allowlist entry.
+_BACKEND_ORIGIN = "http://localhost:8000"
 _KEY_MATERIAL = b"dev-tenant-signing-key-bytes-32!"
 
 
@@ -128,6 +131,39 @@ def test_session_malformed_widget_id_returns_422() -> None:
         json={"widget_id": "not-a-valid-id"},
     )
     assert response.status_code == 422
+
+
+# --- T002 (US1): Approach A — backend/non-allowlisted origin must succeed. ---
+
+
+def test_session_success_from_backend_origin_not_on_allowlist() -> None:
+    """C-S1 (FR-001): the real browser flow sends the BACKEND origin (the iframe
+    is served from the backend), which is NOT a customer allowlist entry. Under
+    Approach A this must return 200 + a token.
+
+    Fails against current code (403 from the removed allowlist check); passes
+    after the allowlist comparison is dropped from ``exchange()``.
+    """
+    _setup_widget_dependencies()
+    response = client.post(
+        "/api/v1/widget/session",
+        headers={"Origin": _BACKEND_ORIGIN},
+        json={"widget_id": _PUBLIC_WIDGET_ID},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json().get("session_token")
+
+
+def test_session_missing_origin_header_returns_400() -> None:
+    """FR-009 fail-closed (retained under Approach A): the allowlist comparison
+    is gone, but token exchange still requires a browser-set Origin header.
+    """
+    _setup_widget_dependencies()
+    response = client.post(
+        "/api/v1/widget/session",
+        json={"widget_id": _PUBLIC_WIDGET_ID},
+    )
+    assert response.status_code == 400
 
 
 # --- T047 (US2): chat 401 paths for missing / wrong-secret / past-exp tokens. ---

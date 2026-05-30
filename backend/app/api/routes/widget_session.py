@@ -64,7 +64,9 @@ async def post_widget_session(
     db: AsyncSession = Depends(get_db),
 ) -> WidgetSessionResponse:
     if not origin:
-        # FR-011: token exchange requires a browser-set Origin header.
+        # FR-009: token exchange requires a browser-set Origin header (fail
+        # closed). Approach A: the Origin is NOT compared against the customer
+        # allowlist here — that allowlist governs embedding only.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Origin header required",
@@ -93,9 +95,12 @@ async def post_widget_session(
         ) from exc
 
     # Gate 2: per-tenant. We only know the tenant after a successful exchange,
-    # so this gate is checked AFTER resolve. Charging post-exchange keeps the
-    # per-tenant counter aligned with accepted traffic: a flood of 403s on
-    # attacker origins never drains a legitimate tenant's budget.
+    # so this gate is checked AFTER resolve, and after the per-IP Gate 1 (so a
+    # single-IP flood cannot drain the tenant budget for that tenant's legitimate
+    # visitors). NOTE under Approach A: any origin with a valid public widget_id
+    # now reaches this gate (the customer allowlist no longer gates exchange), so
+    # this per-tenant limit is also what bounds a /session flood aimed at one
+    # tenant from non-allowlisted origins.
     lookup = await widget_repo.get_by_public_id(db, payload.widget_id)
     if lookup is not None:
         tenant_decision = await check_and_consume(

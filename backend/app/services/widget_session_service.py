@@ -1,10 +1,18 @@
 """Widget session-token exchange service.
 
-US2-hardened: every failure path raises ``WidgetSessionError`` which the route
-translates to a single uniform 403 response body, so callers cannot tell
-"origin not allowed" from "widget not found" from "widget disabled" (FR-013,
-prevents allowlist enumeration). The well-formed-Origin check, widget status
-check, and signing-key resolution all collapse to the same error.
+Approach A (feature 006): the customer allowlist is decoupled from the
+request-time origin check. Tenant identity is derived solely from the
+server-side ``widget_id`` lookup, so the request Origin is NOT compared against
+``widget_allowed_origins`` here — that table governs embedding only (the
+per-tenant ``frame-ancestors`` CSP on ``embed.html``). A well-formed-Origin
+gate is retained (fail-closed), but a backend/non-allowlisted origin now
+succeeds.
+
+US2-hardened: every remaining failure path raises ``WidgetSessionError`` which
+the route translates to a single uniform 403 response body, so callers cannot
+tell "widget not found" from "widget disabled" from "no signing key" (FR-013,
+prevents enumeration). The well-formed-Origin check, widget status check, and
+signing-key resolution all collapse to the same error.
 """
 
 from __future__ import annotations
@@ -20,7 +28,7 @@ from app.core.config import settings
 from app.core.security import WidgetTokenError, mint_widget_session_token
 from app.core.tenant_context import tenant_context
 from app.db.models.widget_signing_key_version import WidgetSigningKeyVersion
-from app.repositories import allowed_origin_repo, widget_repo
+from app.repositories import widget_repo
 from app.schemas.widget import WidgetPublicView
 from app.schemas.widget_session import WidgetSessionResponse
 
@@ -93,12 +101,10 @@ async def exchange(
     # set RLS filters every row and exchange would wrongly 403. Set the context
     # to the tenant just resolved from the trusted lookup (never from the caller).
     async with tenant_context(session, lookup.tenant_id):
-        allowed = await allowed_origin_repo.exists_for_tenant(
-            session, lookup.tenant_id, origin
-        )
-        if not allowed:
-            raise WidgetSessionError("origin not allowed")
-
+        # Approach A: the request Origin is NOT compared against
+        # widget_allowed_origins here. That allowlist governs embedding only
+        # (frame-ancestors on embed.html); tenant identity already comes from
+        # the trusted widget lookup above.
         active_key = await _fetch_active_key_version(session, lookup.tenant_id)
         if active_key is None:
             raise WidgetSessionError("no signing key")
